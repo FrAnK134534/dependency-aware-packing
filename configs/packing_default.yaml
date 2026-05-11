@@ -1,0 +1,13 @@
+input_path: data/examples/code_docs.jsonl
+output_path: outputs/example_dependency_aware.jsonl
+method: dependency_aware
+max_tokens: 512
+seed: 42
+
+dependency_weights:
+  import_relation: 1.0
+  test_source_relation: 0.9
+  readme_code_relation: 0.6
+  config_script_relation: 0.5
+  same_directory: 0.25
+  same_repo: 0.1

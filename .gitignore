@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Data and generated artifacts
+data/raw/*
+data/processed/*
+outputs/*
+experiments/notebooks/.ipynb_checkpoints/
+
+# Keep directory placeholders
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!outputs/.gitkeep
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
