@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Iterable
 
+from dapacking.bm25 import BM25Index
 from dapacking.dependency import DEFAULT_WEIGHTS, dependency_score
 from dapacking.documents import Document, PackedSample
 from dapacking.tokenization import count_tokens, truncate_to_tokens
@@ -109,6 +110,53 @@ class SameRepoPacker(SequentialFillMixin, BasePacker):
         return self._pack_in_order(ordered)
 
 
+class BM25Packer(BasePacker):
+    def pack(self, documents: list[Document]) -> list[PackedSample]:
+        remaining = {document.docid: document for document in documents}
+        samples: list[PackedSample] = []
+
+        while remaining:
+            anchor = self._select_anchor(list(remaining.values()))
+            del remaining[anchor.docid]
+            current = [anchor]
+            current_tokens = count_tokens(anchor.content)
+
+            while remaining:
+                candidate, score = self._best_candidate(anchor, list(remaining.values()))
+                if candidate is None or score <= 0:
+                    break
+
+                candidate_tokens = count_tokens(candidate.content)
+                if current_tokens + candidate_tokens > self.config.max_tokens:
+                    break
+
+                current.append(candidate)
+                current_tokens += candidate_tokens
+                del remaining[candidate.docid]
+
+            samples.append(self._make_sample(len(samples), current))
+
+        return samples
+
+    def _select_anchor(self, documents: list[Document]) -> Document:
+        return max(documents, key=lambda doc: count_tokens(doc.content))
+
+    def _best_candidate(
+        self,
+        anchor: Document,
+        candidates: list[Document],
+    ) -> tuple[Document | None, float]:
+        index = BM25Index(candidates)
+        best_doc: Document | None = None
+        best_score = -1.0
+        for candidate_index, candidate in enumerate(candidates):
+            score = index.score(anchor.content, candidate_index)
+            if score > best_score:
+                best_doc = candidate
+                best_score = score
+        return best_doc, best_score
+
+
 class DependencyAwarePacker(BasePacker):
     def pack(self, documents: list[Document]) -> list[PackedSample]:
         remaining = {document.docid: document for document in documents}
@@ -190,6 +238,7 @@ def build_packer(config: PackingConfig) -> BasePacker:
         "random": RandomPacker,
         "length_aware": LengthAwarePacker,
         "same_repo": SameRepoPacker,
+        "bm25": BM25Packer,
         "dependency_aware": DependencyAwarePacker,
     }
     try:

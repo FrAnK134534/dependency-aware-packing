@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, help="Output JSONL packed samples.")
     parser.add_argument(
         "--method",
-        choices=["random", "length_aware", "same_repo", "dependency_aware"],
+        choices=["random", "length_aware", "same_repo", "bm25", "dependency_aware"],
         help="Packing method.",
     )
     parser.add_argument("--max-tokens", type=int, help="Maximum tokens per packed sample.")

@@ -91,7 +91,20 @@ Compare methods:
 python scripts/run_packing.py --input data/examples/code_docs.jsonl --output outputs/random.jsonl --method random --max-tokens 512
 python scripts/run_packing.py --input data/examples/code_docs.jsonl --output outputs/length_aware.jsonl --method length_aware --max-tokens 512
 python scripts/run_packing.py --input data/examples/code_docs.jsonl --output outputs/same_repo.jsonl --method same_repo --max-tokens 512
+python scripts/run_packing.py --input data/examples/code_docs.jsonl --output outputs/bm25.jsonl --method bm25 --max-tokens 512
 python scripts/run_packing.py --input data/examples/code_docs.jsonl --output outputs/dependency.jsonl --method dependency_aware --max-tokens 512
+```
+
+Summarize generated packing files:
+
+```bash
+python scripts/summarize_packing.py \
+  outputs/random.jsonl \
+  outputs/length_aware.jsonl \
+  outputs/same_repo.jsonl \
+  outputs/bm25.jsonl \
+  outputs/dependency.jsonl \
+  --output outputs/packing_summary.csv
 ```
 
 ## Initial Baselines
@@ -99,10 +112,11 @@ python scripts/run_packing.py --input data/examples/code_docs.jsonl --output out
 - `random`: randomly shuffles documents and fills context windows.
 - `length_aware`: first-fit decreasing by token length.
 - `same_repo`: packs documents from the same repository.
+- `bm25`: uses lexical retrieval from an anchor document to fill each window.
 - `dependency_aware`: greedily maximizes structural dependency edges while
   controlling token utilization and truncation.
 
-BM25 and semantic DataSculpt-lite baselines are planned as the next milestone.
+Semantic DataSculpt-lite packing is planned as the next baseline milestone.
 
 ## Thesis Milestones
 

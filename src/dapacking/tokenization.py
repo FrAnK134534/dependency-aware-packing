@@ -5,6 +5,10 @@ import re
 TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
 
+def tokenize(text: str) -> list[str]:
+    return [token.lower() for token in TOKEN_PATTERN.findall(text)]
+
+
 def count_tokens(text: str) -> int:
     """Lightweight tokenizer for packing statistics.
 
@@ -12,7 +16,7 @@ def count_tokens(text: str) -> int:
     The lightweight counter keeps early packing experiments dependency-light.
     """
 
-    return len(TOKEN_PATTERN.findall(text))
+    return len(tokenize(text))
 
 
 def truncate_to_tokens(text: str, max_tokens: int) -> tuple[str, int]:
