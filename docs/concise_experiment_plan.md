@@ -1,180 +1,426 @@
-# 简明实验方案：代码仓库结构依赖感知 Packing
+# 设计思路说明：代码仓库结构依赖感知 Packing
 
-## 1. 论文题目
+## 1. 这个课题想解决什么问题
 
-**面向低资源长上下文适配的代码仓库结构依赖感知数据 Packing 方法研究**
+大语言模型要具备长上下文能力，不能只靠把模型的最大输入长度调大。模型还需要在训练或适配阶段见过足够多“有意义的长上下文样本”。
 
-英文题目：
-
-**Structure-Dependency-Aware Data Packing for Low-Resource Long-Context Adaptation in Code Repository Scenarios**
-
-## 2. 核心问题
-
-低资源条件下，长上下文适配训练的 token budget 有限。对于代码仓库数据，简单随机拼接、按长度填满窗口、同仓库拼接或 BM25 检索相关拼接，都不一定能保证训练样本内部存在真正有用的跨文件依赖。
-
-本课题研究：
-
-> 能否利用代码仓库中的结构依赖关系，构造更有效的长上下文训练样本？
-
-## 3. 核心想法
-
-普通 packing 关注：
+所谓长上下文样本，可以简单理解为：
 
 ```text
-是否能填满窗口
-是否属于同一仓库
-是否词面相关
-是否语义相似
+把多个文档、多个文件或一段很长的内容拼成一个较长的训练输入。
 ```
 
-本课题关注：
+但问题是：**不是所有拼起来的长文本都有学习价值。**
+
+例如，把几个完全无关的文件拼在一起，虽然长度变长了，但模型并没有学到“前面的内容如何帮助理解后面的内容”。这种样本只是占用了 context window，并不一定能提升模型利用长上下文的能力。
+
+因此，本课题关注的核心问题是：
+
+> 在低资源条件下，如何更有效地组织长上下文训练样本，让模型学到真正有用的跨文件依赖关系？
+
+这里的“低资源”主要指普通实验室或个人可承受的训练条件，例如双 RTX 4080，而不是大厂级别的大规模预训练资源。
+
+---
+
+## 2. 为什么选择代码仓库作为研究场景
+
+这个方向可以在很多文本数据上做，比如论文、网页、百科、技术文档等。但硕士课题不适合一开始做得太泛，所以这里选择 **代码仓库** 作为主要场景。
+
+原因是代码仓库天然存在清晰的结构关系：
 
 ```text
-一个文件是否能帮助模型理解或预测另一个文件
+README 会说明项目如何使用；
+config 文件会影响训练脚本或运行脚本；
+source file 中定义函数、类或模块；
+test file 会测试 source file；
+一个文件会 import 另一个文件；
+同目录文件通常属于同一模块。
 ```
 
-因此提出 **Structure-Dependency-Aware Packing**，优先把存在结构依赖的文件放入同一个长上下文窗口。
+这些关系比普通文本中的“语义相似”更明确，也更容易解释。
 
-## 4. 结构依赖定义
+例如：
 
-第一版只使用轻量、可解释的代码仓库结构关系：
+```text
+src/model.py      定义模型结构
+src/train.py      import model.py 并调用模型
+tests/test_model.py  测试 model.py
+README.md         说明如何训练和使用模型
+config/train.yaml 保存训练参数
+```
 
-| 关系 | 示例 |
+这些文件放在同一个长上下文窗口里，比随机拼几个同样长度的文件更可能形成有用的学习信号。
+
+这也是本课题选择代码仓库的关键原因：
+
+> 代码仓库中的结构关系可以作为“上下文依赖”的低成本近似。
+
+---
+
+## 3. 什么是 Packing
+
+Packing 指的是：**把多个较短的文档或文件组织成一个固定长度的训练样本。**
+
+模型训练时通常不是直接处理一个个原始文件，而是处理固定长度左右的 token 序列。例如一个训练样本可能是 4096 tokens 或 8192 tokens。
+
+如果一个文件很短，直接单独作为训练样本会浪费大量上下文空间。所以需要把多个文件拼到一起，这个过程就叫 packing。
+
+简单 packing 可能是：
+
+```text
+随机打乱文件，然后依次往窗口里塞，塞满为止。
+```
+
+长度优先 packing 可能是：
+
+```text
+优先选择长度合适的文件，让窗口尽量被填满。
+```
+
+检索式 packing 可能是：
+
+```text
+以某个文件为中心，用 BM25 或 embedding 找相关文件，然后拼在一起。
+```
+
+本课题认为，这些方法都有一个不足：
+
+> 它们主要关注“能否拼起来”或“是否相似”，但不直接关注“文件之间是否存在可学习依赖”。
+
+---
+
+## 4. 本课题的核心想法
+
+本课题的核心想法是：
+
+> 长上下文训练样本不应该只是长，而应该包含有用的跨文件依赖。
+
+对于代码仓库来说，“有用依赖”可以用结构关系近似表示。
+
+比如：
+
+```text
+model.py -> train.py
+```
+
+如果 `train.py` import 并调用了 `model.py`，那么把 `model.py` 放在 `train.py` 前面，模型就有机会学习：
+
+```text
+前文定义了什么；
+后文如何调用它；
+跨文件信息如何被利用。
+```
+
+再比如：
+
+```text
+config/train.yaml -> src/train.py
+README.md -> src/train.py
+src/model.py -> tests/test_model.py
+```
+
+这些组合都比随机拼接更有可能让模型学习到长上下文中的信息关联。
+
+所以，本课题提出的 Dependency-Aware Packing 本质上是：
+
+> 在构造长上下文样本时，优先把存在结构依赖的文件放在一起。
+
+---
+
+## 5. 什么是结构依赖
+
+这里的“结构依赖”不是一个复杂的神经网络判断，而是先用简单、可解释的规则定义。
+
+主要包括：
+
+| 结构关系 | 含义 |
 |---|---|
-| import relation | `train.py` import `model.py` |
-| source-test relation | `test_model.py` 测试 `model.py` |
-| README-code relation | `README.md` 说明 `src/model.py` |
-| config-script relation | `train.yaml` 服务于 `train.py` |
-| same directory/module | 同目录或同模块文件 |
-| same repo | 同仓库弱先验 |
+| import relation | 一个文件 import / require 另一个文件 |
+| source-test relation | 测试文件测试某个源码文件 |
+| README-code relation | README 或文档说明某些代码文件 |
+| config-script relation | 配置文件被训练脚本或运行脚本使用 |
+| same directory/module | 文件位于同一目录或模块 |
+| same repo | 文件属于同一个代码仓库 |
 
-第一版不把 attention、uncertainty 或全量 loss-reduction 作为主方法，避免实验过重。
-
-## 5. 方法流程
+这些关系可以组合成一个 dependency score：
 
 ```text
-1. 收集代码仓库文档
-2. 统一为 JSONL 格式，保留 repo/path/language metadata
-3. 计算文件间结构依赖分数
-4. 从 anchor file 出发贪心构造窗口
-5. 优先加入与窗口内文件存在结构依赖的文件
-6. 控制 max_tokens、截断率和窗口利用率
-7. 输出 packed training samples 和统计指标
+dependency_score(A -> B)
 ```
 
-## 6. 对比方法
+它表示：
 
-| 方法 | 作用 |
+```text
+A 是否可能帮助模型理解或预测 B。
+```
+
+例如：
+
+```text
+dependency_score(model.py -> train.py) 较高
+dependency_score(model.py -> random_notes.md) 较低
+```
+
+这里故意先使用结构规则，而不是复杂模型，是为了让方法更轻量、更可解释，也更适合硕士课题完成。
+
+---
+
+## 6. 为什么不是只用语义相似或 BM25
+
+BM25 和 embedding 相似度都能找到“相关”内容，但相关不一定等于依赖。
+
+BM25 主要看词面重合。例如两个文件都频繁出现 `model`、`train`、`loss`，BM25 可能认为它们相关。但它不一定知道一个文件是否真正依赖另一个文件。
+
+Embedding 相似度主要看语义接近。例如两个文件都在讲训练流程，embedding 可能很相似。但它也不一定能区分：
+
+```text
+只是主题相似
+```
+
+和：
+
+```text
+一个文件定义了函数，另一个文件调用这个函数
+```
+
+本课题不是否定 BM25 或 embedding，而是认为：
+
+> 对代码仓库来说，结构依赖是比单纯相似度更接近“可学习上下文增益”的信号。
+
+后续也可以把它们结合起来：
+
+```text
+先用 BM25/embedding 找候选文件；
+再用结构依赖分数重新排序。
+```
+
+---
+
+## 7. QLoRA 是干什么的
+
+QLoRA 是一种低成本微调大语言模型的方法。
+
+直接全参数微调一个 7B 模型非常耗显存，因为模型所有参数、梯度和优化器状态都要占用大量 GPU 内存。普通实验室的显卡通常很难承受。
+
+QLoRA 的思路可以简化理解为两点：
+
+1. **把原模型用 4-bit 量化加载。**
+
+   这样基础模型占用的显存大幅减少。
+
+2. **只训练很小的 LoRA 适配器。**
+
+   原模型主体基本冻结，只在部分线性层旁边加小矩阵进行训练。
+
+因此，QLoRA 的作用是：
+
+```text
+用较少显存完成大模型适配。
+```
+
+在本课题里，QLoRA 不是研究创新点。它只是一个训练工具，用来让我们在有限显卡资源下比较不同 packing 方法。
+
+换句话说：
+
+```text
+本课题研究的是数据怎么组织；
+QLoRA 负责让这个比较实验能在低资源机器上跑起来。
+```
+
+---
+
+## 8. LoRA 是干什么的
+
+LoRA 是 Low-Rank Adaptation 的缩写。
+
+它的核心思想是：
+
+> 不直接更新大模型的全部参数，而是在模型某些层旁边加入小的低秩矩阵，只训练这些小矩阵。
+
+这样做的好处是：
+
+```text
+显存占用小；
+训练参数少；
+训练速度更快；
+适合多组对比实验。
+```
+
+在本课题中，不同 packing 方法都使用相同的 LoRA/QLoRA 设置。这样才能保证实验差异主要来自 packing 方法，而不是训练配置不同。
+
+---
+
+## 9. Context Length 和 Context Window 是什么
+
+Context length 指模型一次最多能看到多少 token。
+
+例如：
+
+```text
+4K context 约等于一次最多输入 4096 tokens；
+8K context 约等于一次最多输入 8192 tokens。
+```
+
+Context window 就是这段可输入空间。
+
+Packing 的目标就是把多个文件合理放进这个窗口里。
+
+如果窗口里放的是无关文件，模型虽然看到了更长输入，但没有学到跨文件关系。
+
+如果窗口里放的是有依赖的文件，例如：
+
+```text
+README.md + config/train.yaml + src/model.py + src/train.py
+```
+
+模型就更可能学习：
+
+```text
+说明文档如何对应代码；
+配置如何影响脚本；
+定义如何被调用；
+跨文件信息如何关联。
+```
+
+---
+
+## 10. 本课题方法的整体流程
+
+整体流程可以概括为：
+
+```text
+1. 收集代码仓库文件
+2. 为每个文件记录 repo、path、language 等 metadata
+3. 根据 import、test、README、config、目录结构等规则计算依赖关系
+4. 从一个 anchor file 开始构造长上下文窗口
+5. 优先加入与当前窗口存在强依赖的文件
+6. 控制窗口长度，避免严重截断
+7. 输出训练样本和统计指标
+```
+
+最终生成的样本类似：
+
+```text
+<doc README.md>
+项目说明
+</doc>
+
+<doc config/train.yaml>
+训练配置
+</doc>
+
+<doc src/model.py>
+模型定义
+</doc>
+
+<doc src/train.py>
+训练脚本
+</doc>
+```
+
+这种样本比随机文件拼接更有结构，也更符合代码理解任务的真实需求。
+
+---
+
+## 11. 怎么证明这个想法有用
+
+要证明方法有效，不能只和随机方法比，还要和几个强一些的 baseline 比。
+
+关键对比包括：
+
+| 方法 | 对比意义 |
 |---|---|
-| Random Packing | 最弱 baseline |
-| Length-Aware Packing | 控制窗口利用率 |
-| Same-Repo Packing | 排除“只是同仓库有效”的解释 |
-| BM25 Packing | 代表检索相关 packing |
-| Semantic Packing | 代表语义相似 packing |
+| Random Packing | 证明随机拼接不够 |
+| Length-Aware Packing | 排除只是窗口利用率高带来的效果 |
+| Same-Repo Packing | 排除只是同仓库文件放一起带来的效果 |
+| BM25 Packing | 排除只是词面相关带来的效果 |
+| Semantic Packing | 排除只是语义相似带来的效果 |
 | Dependency-Aware Packing | 本课题方法 |
 
-其中最关键对比是：
+其中最重要的是：
 
 ```text
 Same-Repo Packing vs Dependency-Aware Packing
 ```
 
-如果 dependency-aware 在同仓库基础上仍有提升，说明结构依赖本身有贡献。
+因为别人最容易质疑：
 
-## 7. 实验设置
+> 你的方法有效，是不是只是因为你把同一个仓库的文件放在一起？
 
-推荐路线：
+所以必须证明：
 
-```text
-第一阶段：1.5B / 3B + 4K context + QLoRA
-第二阶段：3B + 8K context
-增强实验：7B + 4K/8K，视显存情况决定
-```
+> 在同仓库基础上，进一步考虑结构依赖仍然有价值。
 
-训练时保持：
+---
 
-```text
-模型相同
-训练 token 数相同
-context length 相同
-训练 steps 相同
-LoRA/QLoRA 配置相同
-唯一主要变量是 packing 方法
-```
+## 12. 这个课题的创新点在哪里
 
-## 8. 评测指标
+本课题的创新点不在于发明新的模型结构，也不在于发明新的微调算法。
 
-### Packing 质量指标
+核心创新是：
 
-```text
-token utilization
-avg num docs
-truncation rate
-dependency score
-same-repo ratio
-same-directory ratio
-```
+> 从“相似文档拼接”转向“结构依赖驱动的训练样本构造”。
 
-### 模型效果指标
+具体来说：
 
-```text
-training loss
-validation loss
-long-context validation loss
-passkey retrieval
-mini needle-in-a-haystack
-RepoBench 子集
-跨文件代码补全
-```
+1. 把代码仓库结构关系引入长上下文 packing。
+2. 用轻量 dependency score 指导训练样本构造。
+3. 在低资源长上下文适配中比较不同 packing 策略。
+4. 分析结构依赖是否比随机、同仓库、BM25、语义相似更能提供跨文件学习信号。
 
-## 9. 消融实验
+---
 
-建议保留少而关键的消融：
+## 13. 这个课题为什么适合硕士论文
+
+这个方向适合硕士论文，是因为它同时满足三个条件：
+
+1. **问题有研究意义。**
+
+   长上下文能力是当前大模型的重要方向，而数据组织方式是一个实际但容易被忽视的问题。
+
+2. **方法实现难度可控。**
+
+   第一版主要依赖代码仓库 metadata 和规则，不需要训练新的大模型打分器。
+
+3. **实验可以逐步推进。**
+
+   可以先做 packing 统计，再做小模型 pilot，最后再扩展到更大的 context 或模型。
+
+风险也相对可控：
 
 ```text
-去掉 import relation
-去掉 source-test relation
-去掉 same-repo 弱信号
-dependency-aware vs same-repo
-dependency-aware vs BM25
-dependency-aware vs semantic
+如果训练指标提升不明显，仍然可以通过 packing 质量分析、case study、loss-reduction 抽样分析说明结构依赖的作用。
 ```
 
-## 10. 预期贡献
+---
 
-1. 提出代码仓库场景下的结构依赖感知 packing 目标。
-2. 设计轻量、可解释、低成本的结构依赖分数。
-3. 构建低资源长上下文适配的 packing 对比实验框架。
-4. 验证结构依赖是否能提升跨文件代码理解和长上下文适配效果。
+## 14. 当前项目中的各部分对应什么
 
-## 11. 主要风险
-
-| 风险 | 应对 |
-|---|---|
-| 7B-8K 显存不足 | 先做 1.5B/3B + 4K |
-| 提升不明显 | 加强跨文件任务和 case study |
-| 被认为只是 same-repo packing | 必须加入 same-repo baseline |
-| BM25 更强 | 分析 BM25 是否捕捉了命名/import overlap，可做 BM25 + structure rerank |
-
-## 12. 当前下一步
-
-当前仓库已经实现：
+当前仓库已经实现了第一版工程骨架：
 
 ```text
-random packing
-length-aware packing
-same-repo packing
-BM25 packing
-dependency-aware packing
-packing summary script
+random packing：随机拼接 baseline
+length-aware packing：长度优先 baseline
+same-repo packing：同仓库 baseline
+BM25 packing：词面检索 baseline
+dependency-aware packing：结构依赖感知方法
+packing summary script：统计不同 packing 输出
 ```
 
-下一步建议：
+这些代码的作用是先完成第一步：
 
-```text
-1. 增加 semantic/DataSculpt-lite baseline
-2. 增加 same-repo ratio、same-directory ratio 等统计指标
-3. 构建真实代码仓库数据预处理脚本
-4. 接入真实 tokenizer
-5. 开始 1.5B/3B + 4K pilot training
-```
+> 在不训练模型之前，先验证不同 packing 方法确实生成了不同类型的长上下文样本。
+
+这是后续训练实验的基础。
+
+---
+
+## 15. 一句话总结
+
+这个课题的核心不是“怎么低成本微调模型”，而是：
+
+> 在低资源长上下文适配中，如何通过更合理的数据 packing，让模型看到更有学习价值的跨文件上下文。
+
+QLoRA、LoRA、4K/8K context 都是为了支撑实验运行；真正的研究重点是：
+
+> 代码仓库结构依赖能否作为一种有效的数据组织信号，提升长上下文适配中的跨文件理解能力。
