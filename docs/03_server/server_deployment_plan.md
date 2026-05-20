@@ -110,6 +110,10 @@ bm25
 semantic
 datasculpt_lite
 dependency_aware
+dependency_aware_v2_token_fit
+dependency_aware_no_same_directory
+dependency_aware_no_same_repo
+dependency_aware_strong_edges_only
 ```
 
 Output:

@@ -111,6 +111,13 @@ Current methods:
 - `datasculpt_lite`: combine TF-IDF coherence, token-fit efficiency,
   repository integrity, and redundancy penalty.
 - `dependency_aware`: greedily add documents with structural dependency edges.
+- `dependency_aware_v2_token_fit`: first add dependency-linked documents, then
+  fill remaining budget using same-repo token-fit candidates.
+- `dependency_aware_no_same_directory`: ablation removing directory co-location.
+- `dependency_aware_no_same_repo`: ablation removing the same-repository score
+  bonus.
+- `dependency_aware_strong_edges_only`: ablation keeping only explicit
+  structural relations and excluding `same_directory` / `same_repo`.
 
 Planned methods:
 

@@ -164,6 +164,15 @@ python scripts/run_packing_matrix.py \
   repository-integrity, and redundancy-penalty terms.
 - `dependency_aware`: greedily maximizes structural dependency edges while
   controlling token utilization and truncation.
+- `dependency_aware_v2_token_fit`: first packs dependency-linked documents,
+  then fills remaining context budget with same-repo, low-redundancy documents.
+- `dependency_aware_no_same_directory`: ablation that removes directory
+  co-location as a dependency signal.
+- `dependency_aware_no_same_repo`: ablation that removes repository membership
+  as a dependency-score bonus.
+- `dependency_aware_strong_edges_only`: ablation that uses only explicit
+  relations such as imports, source-test, docs-code, config-script, README-code,
+  and example-code links.
 
 ## Research Milestones
 

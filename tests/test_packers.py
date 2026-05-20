@@ -63,3 +63,58 @@ def test_datasculpt_lite_reports_semantic_stats() -> None:
 
     assert samples[0].stats["semantic_similarity"] > 0
     assert "redundant_pair_rate" in samples[0].stats
+
+
+def test_dependency_aware_v2_token_fit_adds_same_repo_fillers() -> None:
+    docs = [
+        Document("repo:src/utils.py", "def normalize(x): return x", {"repo": "repo", "path": "src/utils.py"}),
+        Document(
+            "repo:tests/test_utils.py",
+            "from utils import normalize\ndef test_normalize(): assert normalize(1)",
+            {"repo": "repo", "path": "tests/test_utils.py", "source_type": "test"},
+        ),
+        Document(
+            "repo:docs/notes.md",
+            "release notes migration guide compatibility matrix",
+            {"repo": "repo", "path": "docs/notes.md"},
+        ),
+        Document("other:README.md", "unrelated project", {"repo": "other", "path": "README.md"}),
+    ]
+
+    packer = build_packer(PackingConfig(method="dependency_aware_v2_token_fit", max_tokens=256))
+    samples = packer.pack(docs)
+
+    grouped_docids = [set(sample.docids) for sample in samples]
+    assert any(
+        {"repo:src/utils.py", "repo:tests/test_utils.py", "repo:docs/notes.md"}.issubset(group)
+        for group in grouped_docids
+    )
+
+
+def test_dependency_aware_no_same_repo_still_uses_import_relation() -> None:
+    docs = [
+        Document("repo:src/utils.py", "def normalize(x): return x", {"repo": "repo", "path": "src/utils.py"}),
+        Document(
+            "repo:src/train.py",
+            "from utils import normalize\nprint(normalize(1))",
+            {"repo": "repo", "path": "src/train.py"},
+        ),
+    ]
+
+    packer = build_packer(PackingConfig(method="dependency_aware_no_same_repo", max_tokens=256))
+    samples = packer.pack(docs)
+
+    assert set(samples[0].docids) == {"repo:src/utils.py", "repo:src/train.py"}
+
+
+def test_dependency_aware_strong_edges_only_ignores_same_directory_only() -> None:
+    docs = [
+        Document("repo:src/a.py", "def alpha(): return 1", {"repo": "repo", "path": "src/a.py"}),
+        Document("repo:src/b.py", "def beta(): return 2", {"repo": "repo", "path": "src/b.py"}),
+    ]
+
+    packer = build_packer(PackingConfig(method="dependency_aware_strong_edges_only", max_tokens=256))
+    samples = packer.pack(docs)
+
+    grouped_docids = [set(sample.docids) for sample in samples]
+    assert not any({"repo:src/a.py", "repo:src/b.py"}.issubset(group) for group in grouped_docids)

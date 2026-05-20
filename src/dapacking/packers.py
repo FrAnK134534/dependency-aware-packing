@@ -13,6 +13,9 @@ from dapacking.semantic import TfidfIndex, token_jaccard
 from dapacking.tokenization import count_tokens, truncate_to_tokens
 
 
+WEAK_DEPENDENCY_LABELS = frozenset({"same_directory", "same_repo"})
+
+
 @dataclass
 class PackingConfig:
     method: str
@@ -370,6 +373,10 @@ class DataSculptLitePacker(BasePacker):
 
 
 class DependencyAwarePacker(BasePacker):
+    excluded_dependency_labels: frozenset[str] = frozenset()
+    token_fit_fill: bool = False
+    token_fit_target_utilization: float = 0.9
+
     def pack(self, documents: list[Document]) -> list[PackedSample]:
         documents, truncated_by_docid = self._prepare_documents(documents)
         remaining = {document.docid: document for document in documents}
@@ -407,6 +414,15 @@ class DependencyAwarePacker(BasePacker):
                 current_tokens += token_counts[candidate.docid]
                 del remaining[candidate.docid]
 
+            if self.token_fit_fill:
+                current, current_tokens = self._fill_by_token_fit(
+                    current,
+                    current_tokens,
+                    remaining,
+                    token_counts,
+                    dependency_scores,
+                )
+
             samples.append(
                 self._make_sample(
                     len(samples),
@@ -433,9 +449,17 @@ class DependencyAwarePacker(BasePacker):
                         target,
                         self.config.dependency_weights or DEFAULT_WEIGHTS,
                     )
-                    if evidence.score >= self.config.min_dependency_score:
-                        scores[source.docid][target.docid] = evidence.score
+                    score = self._filtered_dependency_score(evidence.labels)
+                    if score >= self.config.min_dependency_score:
+                        scores[source.docid][target.docid] = score
         return scores
+
+    def _filtered_dependency_score(self, labels: tuple[str, ...]) -> float:
+        weights = self.config.dependency_weights or DEFAULT_WEIGHTS
+        filtered_labels = [
+            label for label in labels if label not in self.excluded_dependency_labels
+        ]
+        return sum(weights.get(label, 0.0) for label in filtered_labels)
 
     def _select_anchor(
         self,
@@ -480,6 +504,109 @@ class DependencyAwarePacker(BasePacker):
                 best_score = score
 
         return best_doc, best_score
+
+    def _fill_by_token_fit(
+        self,
+        current: list[Document],
+        current_tokens: int,
+        remaining: dict[str, Document],
+        token_counts: dict[str, int],
+        dependency_scores: dict[str, dict[str, float]],
+    ) -> tuple[list[Document], int]:
+        anchor_repo = current[0].repo
+
+        while (
+            remaining
+            and current_tokens / max(self.config.max_tokens, 1) < self.token_fit_target_utilization
+        ):
+            candidates = [
+                document
+                for document in remaining.values()
+                if not anchor_repo or document.repo == anchor_repo
+            ]
+            if not candidates:
+                break
+
+            candidate, score = self._best_token_fit_candidate(
+                current,
+                candidates,
+                current_tokens,
+                token_counts,
+                dependency_scores,
+            )
+            if candidate is None or score <= 0:
+                break
+
+            current.append(candidate)
+            current_tokens += token_counts[candidate.docid]
+            del remaining[candidate.docid]
+
+        return current, current_tokens
+
+    def _best_token_fit_candidate(
+        self,
+        current: list[Document],
+        candidates: list[Document],
+        current_tokens: int,
+        token_counts: dict[str, int],
+        dependency_scores: dict[str, dict[str, float]],
+    ) -> tuple[Document | None, float]:
+        remaining_budget = self.config.max_tokens - current_tokens
+        if remaining_budget <= 0:
+            return None, -1.0
+
+        anchor_repo = current[0].repo
+        best_doc: Document | None = None
+        best_score = -1.0
+
+        for candidate in candidates:
+            candidate_tokens = token_counts[candidate.docid]
+            if candidate_tokens > remaining_budget:
+                continue
+
+            dependency_bonus = max(
+                dependency_scores.get(existing.docid, {}).get(candidate.docid, 0.0)
+                for existing in current
+            )
+            same_parent_bonus = (
+                1.0 if any(_same_parent(existing, candidate) for existing in current) else 0.0
+            )
+            same_repo_bonus = 1.0 if anchor_repo and anchor_repo == candidate.repo else 0.0
+            fit_score = candidate_tokens / max(remaining_budget, 1)
+            redundancy_penalty = max(token_jaccard(existing, candidate) for existing in current)
+            score = (
+                0.65 * fit_score
+                + 0.20 * dependency_bonus
+                + 0.10 * same_parent_bonus
+                + 0.08 * same_repo_bonus
+                - 0.18 * redundancy_penalty
+            )
+
+            if score > best_score:
+                best_doc = candidate
+                best_score = score
+
+        return best_doc, best_score
+
+
+class DependencyAwareV2TokenFitPacker(DependencyAwarePacker):
+    token_fit_fill = True
+
+
+class DependencyAwareNoSameDirectoryPacker(DependencyAwarePacker):
+    excluded_dependency_labels = frozenset({"same_directory"})
+
+
+class DependencyAwareNoSameRepoPacker(DependencyAwarePacker):
+    excluded_dependency_labels = frozenset({"same_repo"})
+
+
+class DependencyAwareStrongEdgesOnlyPacker(DependencyAwarePacker):
+    excluded_dependency_labels = WEAK_DEPENDENCY_LABELS
+
+
+def _same_parent(left: Document, right: Document) -> bool:
+    return bool(left.repo and left.repo == right.repo and left.parent == right.parent)
 
 
 def average_dependency_score(
@@ -544,6 +671,10 @@ def build_packer(config: PackingConfig) -> BasePacker:
         "semantic": SemanticPacker,
         "datasculpt_lite": DataSculptLitePacker,
         "dependency_aware": DependencyAwarePacker,
+        "dependency_aware_v2_token_fit": DependencyAwareV2TokenFitPacker,
+        "dependency_aware_no_same_directory": DependencyAwareNoSameDirectoryPacker,
+        "dependency_aware_no_same_repo": DependencyAwareNoSameRepoPacker,
+        "dependency_aware_strong_edges_only": DependencyAwareStrongEdgesOnlyPacker,
     }
     try:
         return packers[config.method](config)

@@ -21,7 +21,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument(
         "--methods",
-        default="random,length_aware,same_repo,bm25,semantic,datasculpt_lite,dependency_aware",
+        default=(
+            "random,length_aware,same_repo,bm25,semantic,datasculpt_lite,"
+            "dependency_aware,dependency_aware_v2_token_fit,"
+            "dependency_aware_no_same_directory,dependency_aware_no_same_repo,"
+            "dependency_aware_strong_edges_only"
+        ),
     )
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--seed", type=int, default=42)

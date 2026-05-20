@@ -129,3 +129,54 @@ Implemented:
 
 The pilot is now ready to be copied to an 8-GPU NVLink server for larger
 repository sets and later LoRA/QLoRA training runs.
+
+## 6. Dependency-Aware V2 and Ablation Pilot
+
+Command:
+
+```bash
+python scripts/run_packing_matrix.py \
+  --input data/processed/pilot/splits/train_docs.jsonl \
+  --output-dir data/processed/pilot/packed/train_8192_v6_dependency_ablation \
+  --methods dependency_aware,dependency_aware_v2_token_fit,dependency_aware_no_same_directory,dependency_aware_no_same_repo,dependency_aware_strong_edges_only \
+  --max-tokens 8192 \
+  --edges data/processed/pilot/splits/train_edges.jsonl \
+  --summary data/processed/pilot/packed/train_8192_v6_dependency_ablation/summary.csv
+```
+
+All generated samples were checked to be within the 8192-token window.
+
+| Method | Utilization | Docs/window | Dep. score | Weighted edge coverage | Order dependency | Same-repo pair ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| dependency_aware | 0.5845 | 3.5378 | 0.1884 | 0.1280 | 0.2960 | 0.5727 |
+| dependency_aware_v2_token_fit | 0.8977 | 5.4330 | 0.1694 | 0.1185 | 0.3091 | 0.7232 |
+| dependency_aware_no_same_directory | 0.2363 | 1.4301 | 0.0626 | 0.0706 | 0.1464 | 0.1387 |
+| dependency_aware_no_same_repo | 0.5845 | 3.5378 | 0.1884 | 0.1280 | 0.2960 | 0.5727 |
+| dependency_aware_strong_edges_only | 0.2363 | 1.4301 | 0.0626 | 0.0706 | 0.1464 | 0.1387 |
+
+Interpretation:
+
+- `dependency_aware_v2_token_fit` solves the main engineering weakness of the
+  first dependency-aware method: utilization increases from 0.5845 to 0.8977.
+- The v2 method keeps most of the structural advantage: weighted edge coverage
+  decreases only from 0.1280 to 0.1185, while order dependency slightly
+  improves.
+- Removing `same_directory` sharply reduces utilization and edge coverage. This
+  confirms that directory co-location is currently a major weak structural
+  prior. It should be reported as an ablation, not hidden.
+- Removing only `same_repo` has no visible effect in this pilot because
+  same-repo-only edges are below the current dependency threshold; most useful
+  weak edges are actually `same_directory + same_repo`.
+- `strong_edges_only` is conservative and useful for analysis, but too sparse
+  as a standalone packing strategy. It is better used as an ablation or as the
+  first stage of a hybrid method.
+
+Recommended paper-facing method:
+
+```text
+Dependency-Aware V2 = explicit/weak dependency selection + token-fit completion.
+```
+
+This method gives a clearer thesis contribution than the original version:
+it preserves dependency structure while making the packed training data dense
+enough for practical long-context adaptation.
