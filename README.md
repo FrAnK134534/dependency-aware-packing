@@ -1,45 +1,62 @@
-# Dependency-Aware Packing for Low-Resource Long-Context Adaptation
+# Dependency-Aware Packing for Long-Context Adaptation
 
-This project is a master's-thesis-oriented research scaffold for studying
-dependency-aware data packing in low-resource long-context adaptation.
+This project is a research scaffold for studying dependency-aware data packing
+in long-context adaptation.
 
-The first target scenario is code repositories. Instead of packing documents
-only by length, semantic similarity, or retrieval relevance, the project builds
-long-context training samples that preserve learnable cross-file dependencies:
-imports, source-test relations, README-to-code relations, config-to-script
-relations, and same-module structure.
+The main question is:
+
+> Under a fixed model, context length, and training token budget, can better
+> packing strategies help a language model learn to use long-context
+> dependencies more effectively?
+
+The first paper-quality target scenario is multi-source code repository
+context. Instead of packing documents only by length, same-repository
+membership, lexical retrieval, or semantic similarity, the project builds
+long-context training samples that preserve learnable dependencies:
+README-to-code, docs-to-implementation, config-to-script, source-to-test,
+issue-to-file, commit-to-file, and API-doc-to-usage relations.
 
 ## Research Scope
 
-Recommended thesis title:
+Working thesis title:
 
-> Structure-Dependency-Aware Data Packing for Low-Resource Long-Context
-> Adaptation in Code Repository Scenarios
+> Dependency-Aware Data Packing for Efficient Long-Context Adaptation
 
-The initial version focuses on:
+The current version focuses on:
 
-- code repository documents;
-- 4K/8K context windows;
-- structure-based dependency scores;
+- multi-source code repository context;
+- 8K main experiments, with 16K or 13B extensions when stable;
+- dependency-aware packing scores;
 - packing statistics before expensive model training;
-- lightweight baselines for controlled comparison.
+- controlled 8-GPU NVLink training comparisons.
 
 ## Project Layout
 
 ```text
+AGENTS.md                    Agent and experiment-runner project guide
 configs/                     Experiment and packing configs
+  packing/                   Packing configs
+  training/                  7B/8K LoRA and QLoRA templates
+  evaluation/                Evaluation suite templates
 data/
   raw/                       Raw datasets, ignored by git
   processed/                 Generated jsonl files, ignored by git
   examples/                  Tiny example data for smoke tests
-docs/                        Thesis notes and experiment records
-experiments/notebooks/       Analysis notebooks
+docs/
+  00_overview/               Advisor report, design rationale, thesis scope
+  01_design/                 Macro experiment design
+  02_metrics/                Metric definitions
+  03_server/                 8-GPU NVLink deployment plan
+  archive/                   Older plans kept for reference
+experiments/                 Run manifests, logs, and notebooks
 outputs/                     Generated outputs, ignored by git
 scripts/                     CLI entry points
+  server/                    Future server launch scripts
 src/dapacking/               Python package
 tests/                       Basic tests
-dependency_aware_packing_experiment_plan.md
 ```
+
+Start reading from [docs/README.md](docs/README.md).
 
 ## Data Format
 
@@ -107,7 +124,7 @@ python scripts/summarize_packing.py \
   --output outputs/packing_summary.csv
 ```
 
-## Initial Baselines
+## Current Baselines
 
 - `random`: randomly shuffles documents and fills context windows.
 - `length_aware`: first-fit decreasing by token length.
@@ -116,12 +133,15 @@ python scripts/summarize_packing.py \
 - `dependency_aware`: greedily maximizes structural dependency edges while
   controlling token utilization and truncation.
 
-Semantic DataSculpt-lite packing is planned as the next baseline milestone.
+Semantic and DataSculpt-lite packing are planned as the next baseline
+milestones.
 
-## Thesis Milestones
+## Research Milestones
 
 1. Build a stable packing pipeline and statistics dashboard.
-2. Add BM25 and semantic baselines.
-3. Validate structural dependency edges with sampled loss-reduction analysis.
-4. Run pilot QLoRA adaptation on 1.5B/3B models at 4K context.
-5. Expand to 8K and code long-context benchmarks if pilot results are stable.
+2. Add semantic/DataSculpt-lite baselines and structure-reranking variants.
+3. Build multi-source repository data preprocessing.
+4. Run packing-only quality analysis.
+5. Run 7B + 8K LoRA/QLoRA experiments on the 8-GPU NVLink server.
+6. Evaluate with RepoBench, cross-file completion, context gain, passkey,
+   needle, and selected LongBench-style tasks.

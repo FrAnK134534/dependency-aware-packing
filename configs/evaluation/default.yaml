@@ -1,0 +1,40 @@
+evaluation:
+  repo_level:
+    - repobench_r
+    - repobench_c
+    - repobench_p
+  probes:
+    - passkey
+    - needle_in_a_haystack
+  validation:
+    - long_context_validation_loss
+    - dependency_sensitive_context_gain
+
+context_lengths:
+  - 4096
+  - 8192
+  - 16384
+
+passkey:
+  depths:
+    - 0.0
+    - 0.25
+    - 0.5
+    - 0.75
+    - 1.0
+
+needle:
+  depths:
+    - 0.0
+    - 0.25
+    - 0.5
+    - 0.75
+    - 1.0
+  variants:
+    - single_needle
+    - multi_needle
+    - distractor_needle
+
+outputs:
+  result_dir: outputs/evaluation
+  summary_csv: outputs/evaluation/summary.csv

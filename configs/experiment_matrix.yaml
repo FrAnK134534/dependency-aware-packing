@@ -1,0 +1,63 @@
+project: dependency-aware-packing
+goal: compare packing strategies under fixed long-context adaptation budgets
+
+datasets:
+  pilot: data/examples/code_docs.jsonl
+  train: data/processed/train_docs.jsonl
+  validation: data/processed/validation_docs.jsonl
+  test: data/processed/test_docs.jsonl
+
+packing_methods:
+  - random
+  - length_aware
+  - same_repo
+  - bm25
+  - semantic
+  - datasculpt_lite
+  - dependency_aware
+
+main_setting:
+  model_size: 7B
+  context_length: 8192
+  training_method: lora_or_qlora
+  token_budget: 100M
+  hardware: single_node_8gpu_nvlink
+
+extensions:
+  - model_size: 7B
+    context_length: 16384
+  - model_size: 13B
+    context_length: 8192
+
+must_control:
+  - base_model
+  - tokenizer
+  - context_length
+  - token_budget
+  - optimizer
+  - learning_rate
+  - lora_or_qlora_config
+  - effective_batch_size
+  - validation_set
+  - evaluation_protocol
+
+primary_metrics:
+  packing:
+    - token_utilization
+    - token_truncation_rate
+    - avg_docs_per_window
+    - order_dependency
+    - weighted_edge_coverage
+    - semantic_similarity
+    - redundant_pair_rate
+  training:
+    - validation_loss
+    - long_context_validation_loss
+    - context_gain
+  evaluation:
+    - repobench_recall_at_k
+    - repobench_mrr_at_k
+    - cross_file_exact_match
+    - cross_file_edit_similarity
+    - passkey_accuracy
+    - needle_accuracy

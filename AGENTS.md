@@ -64,16 +64,27 @@ The contribution is:
 
 ```text
 configs/                     Packing and experiment configs
+  experiment_matrix.yaml     High-level experiment matrix
+  packing/                   Packing configs
+  training/                  7B/8K LoRA and QLoRA templates
+  evaluation/                Evaluation suite templates
 data/
   examples/                  Tiny smoke-test data
   raw/                       Raw datasets, gitignored
   processed/                 Generated datasets, gitignored
 docs/                        Research plans and reports
+  00_overview/               Advisor report, design rationale, thesis scope
+  01_design/                 Macro experiment design
+  02_metrics/                Metric definitions
+  03_server/                 8-GPU NVLink deployment plan
+  archive/                   Older low-resource plan
 experiments/notebooks/       Analysis notebooks
+experiments/logs/            Small run summaries
 outputs/                     Generated outputs, gitignored
 scripts/
   run_packing.py             Generate packed JSONL files
   summarize_packing.py       Summarize packing outputs
+  server/                    Future server launch scripts
 src/dapacking/
   bm25.py                    Lightweight BM25 implementation
   dependency.py              Structural dependency rules

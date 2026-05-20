@@ -1,0 +1,52 @@
+run_name: 7b_8k_qlora_template
+
+model:
+  name_or_path: TODO_MODEL_PATH
+  context_length: 8192
+  tokenizer_name_or_path: TODO_TOKENIZER_PATH
+  load_in_4bit: true
+
+training:
+  method: qlora
+  precision: bf16
+  token_budget: 100000000
+  learning_rate: 0.0002
+  optimizer: paged_adamw_8bit
+  micro_batch_size: 1
+  gradient_accumulation_steps: 16
+  gradient_checkpointing: true
+  max_steps: null
+
+qlora:
+  quantization: nf4
+  double_quantization: true
+  compute_dtype: bf16
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+distributed:
+  hardware: single_node_8gpu_nvlink
+  launcher: torchrun_or_accelerate
+  num_gpus: 8
+  backend: deepspeed_or_fsdp
+
+data:
+  train_packed_path: data/processed/TODO_PACKING_METHOD_train_8k.jsonl
+  validation_packed_path: data/processed/validation_8k.jsonl
+
+logging:
+  log_every_steps: 10
+  eval_every_steps: 200
+  save_every_steps: 500
+  output_dir: outputs/training/TODO_RUN_NAME
