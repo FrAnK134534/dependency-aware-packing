@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from dapacking.dependency import has_strong_dependency
 from dapacking.edges import DependencyEdge, read_dependency_edges
 from dapacking.io import read_jsonl
 
@@ -24,6 +25,12 @@ class PackingSummary:
     avg_order_dependency: float = 0.0
     edge_coverage: float = 0.0
     weighted_edge_coverage: float = 0.0
+    avg_strong_order_dependency: float = 0.0
+    strong_edge_coverage: float = 0.0
+    weighted_strong_edge_coverage: float = 0.0
+    avg_weak_order_dependency: float = 0.0
+    weak_edge_coverage: float = 0.0
+    weighted_weak_edge_coverage: float = 0.0
     same_repo_pair_ratio: float = 0.0
 
     def to_row(self) -> dict[str, Any]:
@@ -42,6 +49,12 @@ class PackingSummary:
             "avg_order_dependency": round(self.avg_order_dependency, 4),
             "edge_coverage": round(self.edge_coverage, 4),
             "weighted_edge_coverage": round(self.weighted_edge_coverage, 4),
+            "avg_strong_order_dependency": round(self.avg_strong_order_dependency, 4),
+            "strong_edge_coverage": round(self.strong_edge_coverage, 4),
+            "weighted_strong_edge_coverage": round(self.weighted_strong_edge_coverage, 4),
+            "avg_weak_order_dependency": round(self.avg_weak_order_dependency, 4),
+            "weak_edge_coverage": round(self.weak_edge_coverage, 4),
+            "weighted_weak_edge_coverage": round(self.weighted_weak_edge_coverage, 4),
             "same_repo_pair_ratio": round(self.same_repo_pair_ratio, 4),
         }
 
@@ -72,6 +85,12 @@ def summarize_packed_file(path: str | Path, edges_path: str | Path | None = None
         avg_order_dependency=edge_metrics["avg_order_dependency"],
         edge_coverage=edge_metrics["edge_coverage"],
         weighted_edge_coverage=edge_metrics["weighted_edge_coverage"],
+        avg_strong_order_dependency=edge_metrics["avg_strong_order_dependency"],
+        strong_edge_coverage=edge_metrics["strong_edge_coverage"],
+        weighted_strong_edge_coverage=edge_metrics["weighted_strong_edge_coverage"],
+        avg_weak_order_dependency=edge_metrics["avg_weak_order_dependency"],
+        weak_edge_coverage=edge_metrics["weak_edge_coverage"],
+        weighted_weak_edge_coverage=edge_metrics["weighted_weak_edge_coverage"],
         same_repo_pair_ratio=_average(_same_repo_pair_ratio(record.get("docids", [])) for record in records),
     )
 
@@ -82,6 +101,39 @@ def _average(values: Any) -> float:
 
 
 def _edge_metrics(records: list[dict], edges: list[DependencyEdge]) -> dict[str, float]:
+    if not edges:
+        return {
+            "avg_order_dependency": 0.0,
+            "edge_coverage": 0.0,
+            "weighted_edge_coverage": 0.0,
+            "avg_strong_order_dependency": 0.0,
+            "strong_edge_coverage": 0.0,
+            "weighted_strong_edge_coverage": 0.0,
+            "avg_weak_order_dependency": 0.0,
+            "weak_edge_coverage": 0.0,
+            "weighted_weak_edge_coverage": 0.0,
+        }
+
+    all_metrics = _edge_subset_metrics(records, edges)
+    strong_edges = [edge for edge in edges if has_strong_dependency(_edge_labels(edge))]
+    weak_edges = [edge for edge in edges if not has_strong_dependency(_edge_labels(edge))]
+    strong_metrics = _edge_subset_metrics(records, strong_edges)
+    weak_metrics = _edge_subset_metrics(records, weak_edges)
+
+    return {
+        "avg_order_dependency": all_metrics["avg_order_dependency"],
+        "edge_coverage": all_metrics["edge_coverage"],
+        "weighted_edge_coverage": all_metrics["weighted_edge_coverage"],
+        "avg_strong_order_dependency": strong_metrics["avg_order_dependency"],
+        "strong_edge_coverage": strong_metrics["edge_coverage"],
+        "weighted_strong_edge_coverage": strong_metrics["weighted_edge_coverage"],
+        "avg_weak_order_dependency": weak_metrics["avg_order_dependency"],
+        "weak_edge_coverage": weak_metrics["edge_coverage"],
+        "weighted_weak_edge_coverage": weak_metrics["weighted_edge_coverage"],
+    }
+
+
+def _edge_subset_metrics(records: list[dict], edges: list[DependencyEdge]) -> dict[str, float]:
     if not edges:
         return {
             "avg_order_dependency": 0.0,
@@ -121,6 +173,13 @@ def _edge_metrics(records: list[dict], edges: list[DependencyEdge]) -> dict[str,
         "edge_coverage": len(covered) / max(len(all_edge_keys), 1),
         "weighted_edge_coverage": covered_weight / max(total_weight, 1e-12),
     }
+
+
+def _edge_labels(edge: DependencyEdge) -> list[str]:
+    labels = edge.metadata.get("labels")
+    if isinstance(labels, list):
+        return [str(label) for label in labels]
+    return [label for label in edge.relation.split("+") if label]
 
 
 def _same_repo_pair_ratio(docids: list[str]) -> float:

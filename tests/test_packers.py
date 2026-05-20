@@ -18,6 +18,7 @@ def test_dependency_aware_packer_groups_related_docs() -> None:
 
     grouped_docids = [set(sample.docids) for sample in samples]
     assert {"repo:src/utils.py", "repo:src/train.py"} in grouped_docids
+    assert samples[0].stats["tokenizer"] == "simple"
 
 
 def test_bm25_packer_groups_lexically_related_docs() -> None:
@@ -89,6 +90,23 @@ def test_dependency_aware_v2_token_fit_adds_same_repo_fillers() -> None:
         {"repo:src/utils.py", "repo:tests/test_utils.py", "repo:docs/notes.md"}.issubset(group)
         for group in grouped_docids
     )
+
+
+def test_dependency_aware_v2_strong_first_adds_strong_edges_before_fillers() -> None:
+    docs = [
+        Document("repo:src/utils.py", "def normalize(x): return x", {"repo": "repo", "path": "src/utils.py"}),
+        Document(
+            "repo:tests/test_utils.py",
+            "from utils import normalize\ndef test_normalize(): assert normalize(1)",
+            {"repo": "repo", "path": "tests/test_utils.py", "source_type": "test"},
+        ),
+        Document("repo:src/peer.py", "def peer(): return 2", {"repo": "repo", "path": "src/peer.py"}),
+    ]
+
+    packer = build_packer(PackingConfig(method="dependency_aware_v2_strong_first", max_tokens=256))
+    samples = packer.pack(docs)
+
+    assert samples[0].docids[:2] == ["repo:src/utils.py", "repo:tests/test_utils.py"]
 
 
 def test_dependency_aware_no_same_repo_still_uses_import_relation() -> None:

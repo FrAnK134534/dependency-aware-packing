@@ -148,6 +148,7 @@ python scripts/run_packing_matrix.py \
   --input data/processed/splits/train_docs.jsonl \
   --output-dir data/processed/packed/train_8192 \
   --max-tokens 8192 \
+  --tokenizer simple \
   --edges data/processed/splits/train_edges.jsonl \
   --summary data/processed/packed/train_8192/summary.csv
 ```
@@ -166,6 +167,8 @@ python scripts/run_packing_matrix.py \
   controlling token utilization and truncation.
 - `dependency_aware_v2_token_fit`: first packs dependency-linked documents,
   then fills remaining context budget with same-repo, low-redundancy documents.
+- `dependency_aware_v2_strong_first`: first packs explicit structural edges,
+  then weak same-directory edges, then token-fit fillers.
 - `dependency_aware_no_same_directory`: ablation that removes directory
   co-location as a dependency signal.
 - `dependency_aware_no_same_repo`: ablation that removes repository membership
@@ -173,6 +176,21 @@ python scripts/run_packing_matrix.py \
 - `dependency_aware_strong_edges_only`: ablation that uses only explicit
   relations such as imports, source-test, docs-code, config-script, README-code,
   and example-code links.
+
+For training-grade packing, pass the target model tokenizer:
+
+```bash
+python scripts/run_packing_matrix.py \
+  --input data/processed/splits/train_docs.jsonl \
+  --output-dir data/processed/packed/train_8192_qwen_tokens \
+  --max-tokens 8192 \
+  --tokenizer Qwen/Qwen2.5-Coder-7B \
+  --edges data/processed/splits/train_edges.jsonl \
+  --summary data/processed/packed/train_8192_qwen_tokens/summary.csv
+```
+
+Use `--tokenizer-local-files-only` on servers where the tokenizer has already
+been cached or downloaded manually.
 
 ## Research Milestones
 

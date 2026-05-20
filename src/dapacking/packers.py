@@ -7,13 +7,10 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from dapacking.bm25 import BM25Index
-from dapacking.dependency import DEFAULT_WEIGHTS, dependency_score
+from dapacking.dependency import DEFAULT_WEIGHTS, WEAK_DEPENDENCY_LABELS, dependency_score
 from dapacking.documents import Document, PackedSample
 from dapacking.semantic import TfidfIndex, token_jaccard
-from dapacking.tokenization import count_tokens, truncate_to_tokens
-
-
-WEAK_DEPENDENCY_LABELS = frozenset({"same_directory", "same_repo"})
+from dapacking.tokenization import active_tokenizer_name, configure_tokenizer, count_tokens, truncate_to_tokens
 
 
 @dataclass
@@ -26,12 +23,20 @@ class PackingConfig:
     min_similarity_score: float = 0.01
     candidate_pool_size: int = 80
     redundancy_threshold: float = 0.72
+    tokenizer_name: str = "simple"
+    tokenizer_local_files_only: bool = False
+    tokenizer_trust_remote_code: bool = False
 
 
 class BasePacker(ABC):
     def __init__(self, config: PackingConfig) -> None:
         self.config = config
         self.rng = random.Random(config.seed)
+        configure_tokenizer(
+            config.tokenizer_name,
+            local_files_only=config.tokenizer_local_files_only,
+            trust_remote_code=config.tokenizer_trust_remote_code,
+        )
 
     @abstractmethod
     def pack(self, documents: list[Document]) -> list[PackedSample]:
@@ -61,6 +66,7 @@ class BasePacker(ABC):
                 "truncation_rate": round(truncated_tokens / max(token_count + truncated_tokens, 1), 4),
                 "semantic_similarity": round(semantic_similarity, 4),
                 "redundant_pair_rate": round(redundant_pair_rate, 4),
+                "tokenizer": active_tokenizer_name(),
             },
         )
 
@@ -376,43 +382,38 @@ class DependencyAwarePacker(BasePacker):
     excluded_dependency_labels: frozenset[str] = frozenset()
     token_fit_fill: bool = False
     token_fit_target_utilization: float = 0.9
+    strong_first: bool = False
 
     def pack(self, documents: list[Document]) -> list[PackedSample]:
         documents, truncated_by_docid = self._prepare_documents(documents)
         remaining = {document.docid: document for document in documents}
         token_counts = {document.docid: document_window_tokens(document) for document in documents}
         dependency_scores = self._build_dependency_scores(documents)
+        strong_dependency_scores = (
+            self._build_dependency_scores(documents, excluded_labels=WEAK_DEPENDENCY_LABELS)
+            if self.strong_first
+            else dependency_scores
+        )
         samples: list[PackedSample] = []
 
         while remaining:
-            anchor = self._select_anchor(list(remaining.values()), token_counts, dependency_scores)
+            anchor_scores = strong_dependency_scores if self.strong_first else dependency_scores
+            anchor = self._select_anchor(list(remaining.values()), token_counts, anchor_scores)
             del remaining[anchor.docid]
             current = [anchor]
             current_tokens = token_counts[anchor.docid]
             current_repo = anchor.repo
 
-            while remaining:
-                candidates = [
-                    document
-                    for document in remaining.values()
-                    if not current_repo or document.repo == current_repo
-                ]
-                if not candidates:
-                    break
-
-                candidate, score = self._best_candidate(
+            phase_scores = [strong_dependency_scores, dependency_scores] if self.strong_first else [dependency_scores]
+            for scores in phase_scores:
+                current, current_tokens = self._fill_by_dependency(
                     current,
-                    candidates,
                     current_tokens,
+                    remaining,
+                    current_repo,
                     token_counts,
-                    dependency_scores,
+                    scores,
                 )
-                if candidate is None or score <= 0:
-                    break
-
-                current.append(candidate)
-                current_tokens += token_counts[candidate.docid]
-                del remaining[candidate.docid]
 
             if self.token_fit_fill:
                 current, current_tokens = self._fill_by_token_fit(
@@ -433,7 +434,11 @@ class DependencyAwarePacker(BasePacker):
 
         return samples
 
-    def _build_dependency_scores(self, documents: list[Document]) -> dict[str, dict[str, float]]:
+    def _build_dependency_scores(
+        self,
+        documents: list[Document],
+        excluded_labels: frozenset[str] | None = None,
+    ) -> dict[str, dict[str, float]]:
         by_repo: dict[str, list[Document]] = defaultdict(list)
         for document in documents:
             by_repo[document.repo or "__unknown__"].append(document)
@@ -449,15 +454,20 @@ class DependencyAwarePacker(BasePacker):
                         target,
                         self.config.dependency_weights or DEFAULT_WEIGHTS,
                     )
-                    score = self._filtered_dependency_score(evidence.labels)
+                    score = self._filtered_dependency_score(evidence.labels, excluded_labels)
                     if score >= self.config.min_dependency_score:
                         scores[source.docid][target.docid] = score
         return scores
 
-    def _filtered_dependency_score(self, labels: tuple[str, ...]) -> float:
+    def _filtered_dependency_score(
+        self,
+        labels: tuple[str, ...],
+        excluded_labels: frozenset[str] | None = None,
+    ) -> float:
         weights = self.config.dependency_weights or DEFAULT_WEIGHTS
+        excluded_labels = self.excluded_dependency_labels | (excluded_labels or frozenset())
         filtered_labels = [
-            label for label in labels if label not in self.excluded_dependency_labels
+            label for label in labels if label not in excluded_labels
         ]
         return sum(weights.get(label, 0.0) for label in filtered_labels)
 
@@ -471,6 +481,40 @@ class DependencyAwarePacker(BasePacker):
             documents,
             key=lambda doc: (len(dependency_scores.get(doc.docid, {})), token_counts[doc.docid]),
         )
+
+    def _fill_by_dependency(
+        self,
+        current: list[Document],
+        current_tokens: int,
+        remaining: dict[str, Document],
+        current_repo: str,
+        token_counts: dict[str, int],
+        dependency_scores: dict[str, dict[str, float]],
+    ) -> tuple[list[Document], int]:
+        while remaining:
+            candidates = [
+                document
+                for document in remaining.values()
+                if not current_repo or document.repo == current_repo
+            ]
+            if not candidates:
+                break
+
+            candidate, score = self._best_candidate(
+                current,
+                candidates,
+                current_tokens,
+                token_counts,
+                dependency_scores,
+            )
+            if candidate is None or score <= 0:
+                break
+
+            current.append(candidate)
+            current_tokens += token_counts[candidate.docid]
+            del remaining[candidate.docid]
+
+        return current, current_tokens
 
     def _best_candidate(
         self,
@@ -593,6 +637,11 @@ class DependencyAwareV2TokenFitPacker(DependencyAwarePacker):
     token_fit_fill = True
 
 
+class DependencyAwareV2StrongFirstPacker(DependencyAwarePacker):
+    token_fit_fill = True
+    strong_first = True
+
+
 class DependencyAwareNoSameDirectoryPacker(DependencyAwarePacker):
     excluded_dependency_labels = frozenset({"same_directory"})
 
@@ -672,6 +721,7 @@ def build_packer(config: PackingConfig) -> BasePacker:
         "datasculpt_lite": DataSculptLitePacker,
         "dependency_aware": DependencyAwarePacker,
         "dependency_aware_v2_token_fit": DependencyAwareV2TokenFitPacker,
+        "dependency_aware_v2_strong_first": DependencyAwareV2StrongFirstPacker,
         "dependency_aware_no_same_directory": DependencyAwareNoSameDirectoryPacker,
         "dependency_aware_no_same_repo": DependencyAwareNoSameRepoPacker,
         "dependency_aware_strong_edges_only": DependencyAwareStrongEdgesOnlyPacker,

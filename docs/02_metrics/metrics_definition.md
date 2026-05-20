@@ -126,6 +126,29 @@ weighted_edge_coverage
 Use the weighted version as the main metric when edges have different
 importance.
 
+For the current code-repository setting, report strong and weak coverage
+separately:
+
+```text
+strong edges = edges containing import/source-test/docs-code/README-code/config-script/example-code
+weak edges   = edges containing only same_directory and/or same_repo
+```
+
+The summary CSV therefore includes:
+
+```text
+strong_edge_coverage
+weighted_strong_edge_coverage
+weak_edge_coverage
+weighted_weak_edge_coverage
+avg_strong_order_dependency
+avg_weak_order_dependency
+```
+
+This split is important because same-directory relations are useful but weak.
+The thesis claim should mainly rely on explicit strong edges and use weak edges
+as a controlled structural prior.
+
 ### 1.6 Semantic Similarity
 
 Measures whether packed windows remain semantically coherent.

@@ -7,6 +7,9 @@ min_dependency_score: 0.11
 min_similarity_score: 0.01
 candidate_pool_size: 80
 redundancy_threshold: 0.72
+tokenizer_name: simple
+tokenizer_local_files_only: false
+tokenizer_trust_remote_code: false
 
 dependency_weights:
   import_relation: 1.0

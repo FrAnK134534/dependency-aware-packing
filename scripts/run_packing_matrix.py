@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
         default=(
             "random,length_aware,same_repo,bm25,semantic,datasculpt_lite,"
             "dependency_aware,dependency_aware_v2_token_fit,"
+            "dependency_aware_v2_strong_first,"
             "dependency_aware_no_same_directory,dependency_aware_no_same_repo,"
             "dependency_aware_strong_edges_only"
         ),
@@ -34,6 +35,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-similarity-score", type=float, default=0.01)
     parser.add_argument("--candidate-pool-size", type=int, default=80)
     parser.add_argument("--redundancy-threshold", type=float, default=0.72)
+    parser.add_argument(
+        "--tokenizer",
+        default="simple",
+        help="Tokenizer name/path for training-grade counting. Use 'simple' for the built-in tokenizer.",
+    )
+    parser.add_argument(
+        "--tokenizer-local-files-only",
+        action="store_true",
+        help="Load the HuggingFace tokenizer from local cache/files only.",
+    )
+    parser.add_argument(
+        "--tokenizer-trust-remote-code",
+        action="store_true",
+        help="Allow custom tokenizer code when loading from HuggingFace.",
+    )
     parser.add_argument("--edges", type=Path, help="Optional edge file for summary coverage metrics.")
     parser.add_argument("--summary", type=Path, help="Optional summary CSV path.")
     return parser.parse_args()
@@ -57,6 +73,9 @@ def main() -> None:
                 min_similarity_score=args.min_similarity_score,
                 candidate_pool_size=args.candidate_pool_size,
                 redundancy_threshold=args.redundancy_threshold,
+                tokenizer_name=args.tokenizer,
+                tokenizer_local_files_only=args.tokenizer_local_files_only,
+                tokenizer_trust_remote_code=args.tokenizer_trust_remote_code,
             )
         )
         samples = packer.pack(documents)

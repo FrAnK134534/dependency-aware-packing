@@ -113,6 +113,8 @@ Current methods:
 - `dependency_aware`: greedily add documents with structural dependency edges.
 - `dependency_aware_v2_token_fit`: first add dependency-linked documents, then
   fill remaining budget using same-repo token-fit candidates.
+- `dependency_aware_v2_strong_first`: first add explicit structural edges, then
+  weak directory/repository edges, then token-fit candidates.
 - `dependency_aware_no_same_directory`: ablation removing directory co-location.
 - `dependency_aware_no_same_repo`: ablation removing the same-repository score
   bonus.
@@ -209,6 +211,19 @@ Semantic and redundancy metrics:
   candidate selection.
 - `redundant_pair_rate`: fraction of document pairs whose token-Jaccard
   similarity exceeds a high threshold.
+- `strong_edge_coverage` / `weighted_strong_edge_coverage`: coverage of edges
+  containing at least one explicit relation such as import, source-test,
+  docs-code, README-code, config-script, or example-code.
+- `weak_edge_coverage` / `weighted_weak_edge_coverage`: coverage of edges made
+  only from `same_directory` and/or `same_repo`.
+
+Tokenizer policy:
+
+- Use `--tokenizer simple` for fast local smoke tests.
+- Before training, rerun packing with the target model tokenizer, for example
+  `--tokenizer Qwen/Qwen2.5-Coder-7B`.
+- Use `--tokenizer-local-files-only` when the server has no outbound network
+  access and the tokenizer is already cached.
 
 ### 6.2 Post-Training Metrics
 
@@ -405,9 +420,7 @@ Avoid overclaiming:
 ## 12. Near-Term TODOs
 
 1. Add structure-aware reranking on top of BM25 and semantic retrieval.
-2. Add a real tokenizer option, replacing the current lightweight token counter
-   for training-grade packing.
-3. Build multi-source repository data preprocessing:
+2. Build multi-source repository data preprocessing:
    source, tests, README, docs, configs, examples, issues, commits.
-4. Add server-oriented training configs for 7B + 8K LoRA/QLoRA.
-5. Add evaluation scripts for RepoBench, passkey, needle, and context gain.
+3. Add server-oriented training configs for 7B + 8K LoRA/QLoRA.
+4. Add evaluation scripts for RepoBench, passkey, needle, and context gain.

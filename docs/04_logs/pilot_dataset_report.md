@@ -180,3 +180,46 @@ Dependency-Aware V2 = explicit/weak dependency selection + token-fit completion.
 This method gives a clearer thesis contribution than the original version:
 it preserves dependency structure while making the packed training data dense
 enough for practical long-context adaptation.
+
+## 7. Strong-First V2 and Strong/Weak Edge Metrics
+
+Command:
+
+```bash
+python scripts/run_packing_matrix.py \
+  --input data/processed/pilot/splits/train_docs.jsonl \
+  --output-dir data/processed/pilot/packed/train_8192_v7_strong_first \
+  --methods dependency_aware,dependency_aware_v2_token_fit,dependency_aware_v2_strong_first,dependency_aware_strong_edges_only \
+  --max-tokens 8192 \
+  --tokenizer simple \
+  --edges data/processed/pilot/splits/train_edges.jsonl \
+  --summary data/processed/pilot/packed/train_8192_v7_strong_first/summary.csv
+```
+
+All generated samples were checked to be within the 8192-token window.
+
+| Method | Utilization | Dep. score | Weighted all coverage | Weighted strong coverage | Weighted weak coverage | Strong order dep. | Weak order dep. |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dependency_aware | 0.5845 | 0.1884 | 0.1280 | 0.1176 | 0.1349 | 0.1409 | 0.1658 |
+| dependency_aware_v2_token_fit | 0.8977 | 0.1694 | 0.1185 | 0.1128 | 0.1222 | 0.1932 | 0.1320 |
+| dependency_aware_v2_strong_first | 0.8977 | 0.1682 | 0.1240 | 0.1311 | 0.1193 | 0.2235 | 0.1295 |
+| dependency_aware_strong_edges_only | 0.2363 | 0.0626 | 0.0706 | 0.1482 | 0.0194 | 0.1464 | 0.0076 |
+
+Interpretation:
+
+- `dependency_aware_v2_strong_first` keeps the high utilization of v2 while
+  improving weighted strong-edge coverage from 0.1128 to 0.1311.
+- It also raises strong order dependency from 0.1932 to 0.2235, meaning explicit
+  structural relations are more often placed in useful left-to-right order.
+- Weak-edge coverage drops slightly, which is expected: the method deliberately
+  gives import/test/docs/config/example/README relations priority over
+  same-directory relations.
+- For paper experiments, `dependency_aware_v2_strong_first` is currently the
+  best main method candidate. `dependency_aware_v2_token_fit` remains a useful
+  ablation showing what happens without strong-edge priority.
+
+Tokenizer note:
+
+- The pilot above uses `--tokenizer simple` for fast local verification.
+- Before server training, regenerate packed data with the target model tokenizer,
+  for example `--tokenizer Qwen/Qwen2.5-Coder-7B`.

@@ -111,6 +111,7 @@ semantic
 datasculpt_lite
 dependency_aware
 dependency_aware_v2_token_fit
+dependency_aware_v2_strong_first
 dependency_aware_no_same_directory
 dependency_aware_no_same_repo
 dependency_aware_strong_edges_only
@@ -123,6 +124,22 @@ packed JSONL files
 packing summary CSV
 dependency edge coverage table
 ```
+
+For final pretraining data generation, use the target model tokenizer rather
+than the lightweight local tokenizer:
+
+```bash
+python scripts/run_packing_matrix.py \
+  --input data/processed/splits/train_docs.jsonl \
+  --output-dir data/processed/packed/train_8192_qwen_tokens \
+  --max-tokens 8192 \
+  --tokenizer Qwen/Qwen2.5-Coder-7B \
+  --edges data/processed/splits/train_edges.jsonl \
+  --summary data/processed/packed/train_8192_qwen_tokens/summary.csv
+```
+
+If the server cannot access HuggingFace, download or cache the tokenizer first
+and add `--tokenizer-local-files-only`.
 
 ### Stage 2: 7B + 8K Smoke Training
 

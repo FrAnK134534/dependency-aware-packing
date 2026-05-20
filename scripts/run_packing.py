@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
             "datasculpt_lite",
             "dependency_aware",
             "dependency_aware_v2_token_fit",
+            "dependency_aware_v2_strong_first",
             "dependency_aware_no_same_directory",
             "dependency_aware_no_same_repo",
             "dependency_aware_strong_edges_only",
@@ -63,6 +64,21 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Pair similarity threshold where DataSculpt-lite starts penalizing redundancy.",
+    )
+    parser.add_argument(
+        "--tokenizer",
+        default=None,
+        help="Tokenizer name/path for training-grade counting. Use 'simple' for the built-in tokenizer.",
+    )
+    parser.add_argument(
+        "--tokenizer-local-files-only",
+        action="store_true",
+        help="Load the HuggingFace tokenizer from local cache/files only.",
+    )
+    parser.add_argument(
+        "--tokenizer-trust-remote-code",
+        action="store_true",
+        help="Allow custom tokenizer code when loading from HuggingFace.",
     )
     return parser.parse_args()
 
@@ -96,6 +112,13 @@ def main() -> None:
         if args.redundancy_threshold is not None
         else float(config.get("redundancy_threshold", 0.72))
     )
+    tokenizer_name = args.tokenizer or str(config.get("tokenizer_name", "simple"))
+    tokenizer_local_files_only = bool(
+        args.tokenizer_local_files_only or config.get("tokenizer_local_files_only", False)
+    )
+    tokenizer_trust_remote_code = bool(
+        args.tokenizer_trust_remote_code or config.get("tokenizer_trust_remote_code", False)
+    )
 
     if not input_path:
         raise SystemExit("--input or input_path in config is required")
@@ -113,6 +136,9 @@ def main() -> None:
             min_similarity_score=min_similarity_score,
             candidate_pool_size=candidate_pool_size,
             redundancy_threshold=redundancy_threshold,
+            tokenizer_name=tokenizer_name,
+            tokenizer_local_files_only=tokenizer_local_files_only,
+            tokenizer_trust_remote_code=tokenizer_trust_remote_code,
         )
     )
     samples = packer.pack(documents)

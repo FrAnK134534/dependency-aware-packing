@@ -21,6 +21,9 @@ dev = [
   "pytest>=8.0",
   "ruff>=0.4"
 ]
+tokenizer = [
+  "transformers>=4.40"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -17,6 +17,7 @@ DEFAULT_WEIGHTS = {
     "same_directory": 0.25,
     "same_repo": 0.1,
 }
+WEAK_DEPENDENCY_LABELS = frozenset({"same_directory", "same_repo"})
 
 CODE_SUFFIXES = {".py", ".js", ".ts", ".tsx", ".jsx", ".java", ".go", ".rs", ".cpp", ".c", ".h"}
 CONFIG_NAMES = {
@@ -35,6 +36,10 @@ CONFIG_NAMES = {
 class DependencyEvidence:
     score: float
     labels: tuple[str, ...]
+
+
+def has_strong_dependency(labels: tuple[str, ...] | list[str]) -> bool:
+    return any(label not in WEAK_DEPENDENCY_LABELS for label in labels)
 
 
 def dependency_score(
