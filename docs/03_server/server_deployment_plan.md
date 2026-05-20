@@ -100,6 +100,16 @@ Verify that all packing methods generate valid outputs and measurable
 statistics before any expensive model training.
 ```
 
+One-command 50-repository run:
+
+```bash
+bash scripts/server/run_packing_only_experiment.sh \
+  configs/datasets/python50_repos.tsv \
+  data/processed/python50 \
+  8192 \
+  simple
+```
+
 Methods:
 
 ```text

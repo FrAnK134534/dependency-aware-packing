@@ -148,21 +148,27 @@ def _edge_subset_metrics(records: list[dict], edges: list[DependencyEdge]) -> di
 
     for record in records:
         docids = [str(docid) for docid in record.get("docids", [])]
-        positions = {docid: index for index, docid in enumerate(docids)}
-        for source, target in all_edge_keys:
-            if source in positions and target in positions and positions[source] < positions[target]:
-                covered.add((source, target))
 
         if len(docids) < 2:
             order_scores.append(0.0)
             continue
+
+        for source in docids:
+            for target in docids:
+                if source == target:
+                    continue
+                edge_key = (source, target)
+                if edge_key in edge_index:
+                    covered.add(edge_key)
 
         sample_score = 0.0
         for target_index in range(1, len(docids)):
             target = docids[target_index]
             best = 0.0
             for source in docids[:target_index]:
-                best = max(best, edge_index.get((source, target), 0.0))
+                edge_key = (source, target)
+                edge_weight = edge_index.get(edge_key, 0.0)
+                best = max(best, edge_weight)
             sample_score += best
         order_scores.append(sample_score / (len(docids) - 1))
 

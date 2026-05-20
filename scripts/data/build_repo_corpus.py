@@ -20,6 +20,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest", type=Path, help="Text file with one repository root per line.")
     parser.add_argument("--output", required=True, type=Path, help="Output documents JSONL path.")
     parser.add_argument("--max-file-bytes", type=int, default=1_000_000)
+    parser.add_argument(
+        "--max-docs-per-repo",
+        type=int,
+        help="Optional cap to keep large repositories from dominating pilot experiments.",
+    )
     parser.add_argument("--include-unknown", action="store_true")
     return parser.parse_args()
 
@@ -37,6 +42,7 @@ def main() -> None:
         CorpusBuildConfig(
             max_file_bytes=args.max_file_bytes,
             include_unknown=args.include_unknown,
+            max_docs_per_repo=args.max_docs_per_repo,
         ),
     )
     write_documents(args.output, documents)

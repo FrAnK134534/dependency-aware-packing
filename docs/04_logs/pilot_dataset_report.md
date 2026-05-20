@@ -223,3 +223,58 @@ Tokenizer note:
 - The pilot above uses `--tokenizer simple` for fast local verification.
 - Before server training, regenerate packed data with the target model tokenizer,
   for example `--tokenizer Qwen/Qwen2.5-Coder-7B`.
+
+## 8. Python50 Cap300 Packing-Only Pilot
+
+Command:
+
+```bash
+MAX_DOCS_PER_REPO=300 bash scripts/server/run_packing_only_experiment.sh \
+  configs/datasets/python50_repos.tsv \
+  data/processed/python50_cap300 \
+  8192 \
+  simple \
+  random,bm25,datasculpt_lite,dependency_aware_v2_token_fit,dependency_aware_v2_strong_first,dependency_aware_strong_edges_only
+```
+
+Dataset build result:
+
+| Item | Value |
+|---|---:|
+| repositories available | 50 |
+| documents | 7374 |
+| dependency edges | 214735 |
+| train repositories | 40 |
+| train documents | 5884 |
+| train edges | 181555 |
+| validation repositories | 5 |
+| validation documents | 741 |
+| validation edges | 9494 |
+| test repositories | 5 |
+| test documents | 749 |
+| test edges | 23686 |
+
+All generated samples were checked to be within the 8192-token window.
+
+| Method | Utilization | Docs/window | Dep. score | Weighted all coverage | Weighted strong coverage | Weighted weak coverage | Order dep. | Strong order dep. | Weak order dep. |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| random | 0.7870 | 3.6032 | 0.0030 | 0.0006 | 0.0003 | 0.0008 | 0.0029 | 0.0004 | 0.0025 |
+| bm25 | 0.9570 | 4.3812 | 0.1548 | 0.0658 | 0.0320 | 0.0825 | 0.1564 | 0.0517 | 0.1073 |
+| datasculpt_lite | 0.9492 | 4.3456 | 0.1506 | 0.0574 | 0.0410 | 0.0655 | 0.1673 | 0.0666 | 0.1046 |
+| dependency_aware_v2_token_fit | 0.9306 | 4.2607 | 0.1800 | 0.0981 | 0.0851 | 0.1044 | 0.3215 | 0.2095 | 0.1253 |
+| dependency_aware_v2_strong_first | 0.9313 | 4.2638 | 0.1834 | 0.1013 | 0.0933 | 0.1052 | 0.3329 | 0.2204 | 0.1268 |
+| dependency_aware_strong_edges_only | 0.3258 | 1.4915 | 0.0677 | 0.0465 | 0.0976 | 0.0213 | 0.1577 | 0.1577 | 0.0083 |
+
+Interpretation:
+
+- `dependency_aware_v2_strong_first` is still the strongest main-method
+  candidate at the larger 50-repository scale.
+- Compared with BM25 and DataSculpt-lite, it sacrifices a small amount of token
+  utilization but substantially improves weighted edge coverage, strong-edge
+  coverage, and left-to-right order dependency.
+- `dependency_aware_strong_edges_only` confirms that strong edges alone are too
+  sparse for efficient training data construction. It should remain an
+  ablation, not the main packing strategy.
+- This run uses `MAX_DOCS_PER_REPO=300` as a controlled pilot cap. The cap
+  prevents very large repositories from dominating local sanity checks. Server
+  experiments can raise the cap after confirming runtime and storage budget.

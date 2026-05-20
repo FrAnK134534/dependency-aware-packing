@@ -127,8 +127,13 @@ python scripts/summarize_packing.py \
 Build a local repository corpus:
 
 ```bash
+python scripts/data/clone_repo_manifest.py \
+  --input configs/datasets/python50_repos.tsv \
+  --repo-dir data/raw/repos \
+  --output-manifest data/raw/python50_repos_local_manifest.txt
+
 python scripts/data/build_repo_corpus.py \
-  --manifest data/raw/repo_manifest.txt \
+  --manifest data/raw/python50_repos_local_manifest.txt \
   --output data/processed/documents.jsonl
 
 python scripts/data/build_dependency_edges.py \
@@ -151,6 +156,24 @@ python scripts/run_packing_matrix.py \
   --tokenizer simple \
   --edges data/processed/splits/train_edges.jsonl \
   --summary data/processed/packed/train_8192/summary.csv
+```
+
+Or run the full 50-repository packing-only pipeline:
+
+```bash
+bash scripts/server/run_packing_only_experiment.sh \
+  configs/datasets/python50_repos.tsv \
+  data/processed/python50 \
+  8192 \
+  simple
+```
+
+For large repository sets, `run_packing_only_experiment.sh` defaults to
+`MAX_DOCS_PER_REPO=300` so a single large repository does not dominate the
+pilot. Override it explicitly if needed:
+
+```bash
+MAX_DOCS_PER_REPO=500 bash scripts/server/run_packing_only_experiment.sh
 ```
 
 ## Current Baselines

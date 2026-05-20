@@ -9,6 +9,7 @@ from typing import Iterable
 from dapacking.bm25 import BM25Index
 from dapacking.dependency import DEFAULT_WEIGHTS, WEAK_DEPENDENCY_LABELS, dependency_score
 from dapacking.documents import Document, PackedSample
+from dapacking.edges import DependencyEdge, build_dependency_edges
 from dapacking.semantic import TfidfIndex, token_jaccard
 from dapacking.tokenization import active_tokenizer_name, configure_tokenizer, count_tokens, truncate_to_tokens
 
@@ -170,7 +171,8 @@ class BM25Packer(BasePacker):
             current = [anchor]
             current_tokens = token_counts[anchor.docid]
 
-            ranked_candidates = self._rank_candidates(anchor, list(remaining.values()), index, doc_indices)
+            candidates = same_repo_candidates(anchor, remaining.values())
+            ranked_candidates = self._rank_candidates(anchor, candidates, index, doc_indices)
             for candidate, score in ranked_candidates:
                 if score <= 0:
                     break
@@ -230,7 +232,8 @@ class SemanticPacker(BasePacker):
             current = [anchor]
             current_tokens = token_counts[anchor.docid]
 
-            ranked_candidates = self._rank_candidates(anchor, list(remaining.values()), index, doc_indices)
+            candidates = same_repo_candidates(anchor, remaining.values())
+            ranked_candidates = self._rank_candidates(anchor, candidates, index, doc_indices)
             for candidate, score in ranked_candidates:
                 if score < self.config.min_similarity_score:
                     break
@@ -293,9 +296,12 @@ class DataSculptLitePacker(BasePacker):
             current_tokens = token_counts[anchor.docid]
 
             while remaining:
+                candidates = same_repo_candidates(anchor, remaining.values())
+                if not candidates:
+                    break
                 candidate, score = self._best_candidate(
                     current,
-                    list(remaining.values()),
+                    candidates,
                     current_tokens,
                     index,
                     doc_indices,
@@ -388,9 +394,14 @@ class DependencyAwarePacker(BasePacker):
         documents, truncated_by_docid = self._prepare_documents(documents)
         remaining = {document.docid: document for document in documents}
         token_counts = {document.docid: document_window_tokens(document) for document in documents}
-        dependency_scores = self._build_dependency_scores(documents)
+        dependency_edges = build_dependency_edges(
+            documents,
+            weights=self.config.dependency_weights or DEFAULT_WEIGHTS,
+            min_score=self.config.min_dependency_score,
+        )
+        dependency_scores = self._dependency_scores_from_edges(dependency_edges)
         strong_dependency_scores = (
-            self._build_dependency_scores(documents, excluded_labels=WEAK_DEPENDENCY_LABELS)
+            self._dependency_scores_from_edges(dependency_edges, excluded_labels=WEAK_DEPENDENCY_LABELS)
             if self.strong_first
             else dependency_scores
         )
@@ -439,24 +450,26 @@ class DependencyAwarePacker(BasePacker):
         documents: list[Document],
         excluded_labels: frozenset[str] | None = None,
     ) -> dict[str, dict[str, float]]:
-        by_repo: dict[str, list[Document]] = defaultdict(list)
-        for document in documents:
-            by_repo[document.repo or "__unknown__"].append(document)
+        edges = build_dependency_edges(
+            documents,
+            weights=self.config.dependency_weights or DEFAULT_WEIGHTS,
+            min_score=self.config.min_dependency_score,
+        )
+        return self._dependency_scores_from_edges(edges, excluded_labels)
 
+    def _dependency_scores_from_edges(
+        self,
+        edges: list[DependencyEdge],
+        excluded_labels: frozenset[str] | None = None,
+    ) -> dict[str, dict[str, float]]:
         scores: dict[str, dict[str, float]] = defaultdict(dict)
-        for repo_documents in by_repo.values():
-            for source in repo_documents:
-                for target in repo_documents:
-                    if source.docid == target.docid:
-                        continue
-                    evidence = dependency_score(
-                        source,
-                        target,
-                        self.config.dependency_weights or DEFAULT_WEIGHTS,
-                    )
-                    score = self._filtered_dependency_score(evidence.labels, excluded_labels)
-                    if score >= self.config.min_dependency_score:
-                        scores[source.docid][target.docid] = score
+        for edge in edges:
+            labels = tuple(str(label) for label in edge.metadata.get("labels", []))
+            if not labels:
+                labels = tuple(label for label in edge.relation.split("+") if label)
+            score = self._filtered_dependency_score(labels, excluded_labels)
+            if score >= self.config.min_dependency_score:
+                scores[edge.source_docid][edge.target_docid] = score
         return scores
 
     def _filtered_dependency_score(
@@ -656,6 +669,12 @@ class DependencyAwareStrongEdgesOnlyPacker(DependencyAwarePacker):
 
 def _same_parent(left: Document, right: Document) -> bool:
     return bool(left.repo and left.repo == right.repo and left.parent == right.parent)
+
+
+def same_repo_candidates(anchor: Document, candidates: Iterable[Document]) -> list[Document]:
+    if not anchor.repo:
+        return list(candidates)
+    return [candidate for candidate in candidates if candidate.repo == anchor.repo]
 
 
 def average_dependency_score(

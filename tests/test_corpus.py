@@ -26,3 +26,19 @@ def test_build_documents_from_repo(tmp_path: Path) -> None:
     assert "toy_repo:README.md" in docids
     assert "toy_repo:src/model.py" in docids
     assert "toy_repo:data.bin" not in docids
+
+
+def test_build_documents_can_limit_documents_per_repo(tmp_path: Path) -> None:
+    repo = tmp_path / "toy_repo"
+    repo.mkdir()
+    (repo / "README.md").write_text("Read me first", encoding="utf-8")
+    (repo / "pyproject.toml").write_text("[project]\nname='toy'", encoding="utf-8")
+    (repo / "src").mkdir()
+    (repo / "src" / "model.py").write_text("class Model: pass", encoding="utf-8")
+
+    from dapacking.corpus import CorpusBuildConfig
+
+    documents = build_documents_from_repos([repo], CorpusBuildConfig(max_docs_per_repo=2))
+
+    docids = [document.docid for document in documents]
+    assert docids == ["toy_repo:README.md", "toy_repo:pyproject.toml"]

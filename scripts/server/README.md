@@ -21,8 +21,31 @@ Current starter scripts:
 
 ```text
 build_dataset_pipeline.sh
+run_packing_only_experiment.sh
 run_packing_matrix.sh
 run_7b_8k_qlora.sh
+```
+
+Run the 50-repository packing-only experiment with the lightweight tokenizer:
+
+```bash
+MAX_DOCS_PER_REPO=300 \
+bash scripts/server/run_packing_only_experiment.sh \
+  configs/datasets/python50_repos.tsv \
+  data/processed/python50 \
+  8192 \
+  simple
+```
+
+Before model training, rerun packing with the target model tokenizer:
+
+```bash
+MAX_DOCS_PER_REPO=300 \
+bash scripts/server/run_packing_only_experiment.sh \
+  configs/datasets/python50_repos.tsv \
+  data/processed/python50_qwen \
+  8192 \
+  Qwen/Qwen2.5-Coder-7B
 ```
 
 Every server run should save:

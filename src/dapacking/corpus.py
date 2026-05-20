@@ -67,6 +67,7 @@ SKIP_DIRS = {
 class CorpusBuildConfig:
     max_file_bytes: int = 1_000_000
     include_unknown: bool = False
+    max_docs_per_repo: int | None = None
 
 
 def build_documents_from_repos(
@@ -82,6 +83,7 @@ def build_documents_from_repos(
         if not root.exists() or not root.is_dir():
             raise ValueError(f"Repository root does not exist or is not a directory: {root}")
 
+        repo_documents: list[Document] = []
         for path in sorted(_iter_repo_files(root)):
             if path.stat().st_size > config.max_file_bytes:
                 continue
@@ -95,7 +97,7 @@ def build_documents_from_repos(
                 continue
 
             relative_path = path.relative_to(root).as_posix()
-            documents.append(
+            repo_documents.append(
                 Document(
                     docid=f"{repo_name}:{relative_path}",
                     content=content,
@@ -109,7 +111,29 @@ def build_documents_from_repos(
                 )
             )
 
+        documents.extend(_limit_repo_documents(repo_documents, config.max_docs_per_repo))
+
     return documents
+
+
+def _limit_repo_documents(documents: list[Document], limit: int | None) -> list[Document]:
+    if limit is None or limit <= 0 or len(documents) <= limit:
+        return documents
+    return sorted(documents, key=_document_priority)[:limit]
+
+
+def _document_priority(document: Document) -> tuple[int, str]:
+    source_priority = {
+        "readme": 0,
+        "config": 1,
+        "source": 2,
+        "test": 3,
+        "docs": 4,
+        "example": 5,
+        "script": 6,
+        "unknown": 7,
+    }
+    return source_priority.get(document.source_type, 99), document.path
 
 
 def classify_source_type(relative_path: str | Path) -> str:
