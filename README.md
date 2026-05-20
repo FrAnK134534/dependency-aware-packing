@@ -158,16 +158,17 @@ python scripts/run_packing_matrix.py \
 - `length_aware`: first-fit decreasing by token length.
 - `same_repo`: packs documents from the same repository.
 - `bm25`: uses lexical retrieval from an anchor document to fill each window.
+- `semantic`: uses a dependency-free TF-IDF cosine index as an early semantic
+  similarity baseline.
+- `datasculpt_lite`: uses TF-IDF similarity plus lightweight token-fit,
+  repository-integrity, and redundancy-penalty terms.
 - `dependency_aware`: greedily maximizes structural dependency edges while
   controlling token utilization and truncation.
-
-Semantic and DataSculpt-lite packing are planned as the next baseline
-milestones.
 
 ## Research Milestones
 
 1. Build a stable packing pipeline and statistics dashboard.
-2. Add semantic/DataSculpt-lite baselines and structure-reranking variants.
+2. Add structure-reranking variants on top of BM25 and semantic retrieval.
 3. Build multi-source repository data preprocessing.
 4. Run packing-only quality analysis.
 5. Run 7B + 8K LoRA/QLoRA experiments on the 8-GPU NVLink server.

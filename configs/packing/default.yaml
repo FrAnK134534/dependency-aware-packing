@@ -4,6 +4,9 @@ method: dependency_aware
 max_tokens: 512
 seed: 42
 min_dependency_score: 0.11
+min_similarity_score: 0.01
+candidate_pool_size: 80
+redundancy_threshold: 0.72
 
 dependency_weights:
   import_relation: 1.0

@@ -107,7 +107,8 @@ random
 length_aware
 same_repo
 bm25
-semantic / datasculpt_lite, once implemented
+semantic
+datasculpt_lite
 dependency_aware
 ```
 

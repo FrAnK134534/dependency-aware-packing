@@ -19,7 +19,9 @@ class BM25Index:
         self.doc_freqs = self._document_frequencies()
 
     def score(self, query: str, document_index: int) -> float:
-        query_terms = Counter(tokenize(query))
+        return self.score_terms(Counter(tokenize(query)), document_index)
+
+    def score_terms(self, query_terms: Counter[str], document_index: int) -> float:
         freqs = self.term_freqs[document_index]
         doc_length = self.doc_lengths[document_index]
         score = 0.0

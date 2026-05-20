@@ -19,9 +19,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate multiple packing baselines from one document file.")
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--methods", default="random,length_aware,same_repo,bm25,dependency_aware")
+    parser.add_argument(
+        "--methods",
+        default="random,length_aware,same_repo,bm25,semantic,datasculpt_lite,dependency_aware",
+    )
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--min-dependency-score", type=float, default=0.11)
+    parser.add_argument("--min-similarity-score", type=float, default=0.01)
+    parser.add_argument("--candidate-pool-size", type=int, default=80)
+    parser.add_argument("--redundancy-threshold", type=float, default=0.72)
     parser.add_argument("--edges", type=Path, help="Optional edge file for summary coverage metrics.")
     parser.add_argument("--summary", type=Path, help="Optional summary CSV path.")
     return parser.parse_args()
@@ -36,14 +43,25 @@ def main() -> None:
     summaries = []
     for method in methods:
         output_path = args.output_dir / f"{method}_{args.max_tokens}.jsonl"
-        packer = build_packer(PackingConfig(method=method, max_tokens=args.max_tokens, seed=args.seed))
+        packer = build_packer(
+            PackingConfig(
+                method=method,
+                max_tokens=args.max_tokens,
+                seed=args.seed,
+                min_dependency_score=args.min_dependency_score,
+                min_similarity_score=args.min_similarity_score,
+                candidate_pool_size=args.candidate_pool_size,
+                redundancy_threshold=args.redundancy_threshold,
+            )
+        )
         samples = packer.pack(documents)
         write_samples(output_path, samples)
         summary = summarize_packed_file(output_path, args.edges)
         summaries.append(summary)
         print(
             f"method={method} samples={summary.samples} tokens={summary.total_tokens} "
-            f"avg_dep={summary.avg_dependency_score:.4f} output={output_path}"
+            f"avg_dep={summary.avg_dependency_score:.4f} output={output_path}",
+            flush=True,
         )
 
     if args.summary:
@@ -55,7 +73,7 @@ def main() -> None:
             writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
             writer.writeheader()
             writer.writerows(rows)
-        print(f"summary={args.summary}")
+        print(f"summary={args.summary}", flush=True)
 
 
 if __name__ == "__main__":

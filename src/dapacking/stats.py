@@ -19,6 +19,8 @@ class PackingSummary:
     avg_dependency_score: float
     avg_token_utilization: float
     avg_truncation_rate: float
+    avg_semantic_similarity: float = 0.0
+    avg_redundant_pair_rate: float = 0.0
     avg_order_dependency: float = 0.0
     edge_coverage: float = 0.0
     weighted_edge_coverage: float = 0.0
@@ -35,6 +37,8 @@ class PackingSummary:
             "avg_dependency_score": round(self.avg_dependency_score, 4),
             "avg_token_utilization": round(self.avg_token_utilization, 4),
             "avg_truncation_rate": round(self.avg_truncation_rate, 4),
+            "avg_semantic_similarity": round(self.avg_semantic_similarity, 4),
+            "avg_redundant_pair_rate": round(self.avg_redundant_pair_rate, 4),
             "avg_order_dependency": round(self.avg_order_dependency, 4),
             "edge_coverage": round(self.edge_coverage, 4),
             "weighted_edge_coverage": round(self.weighted_edge_coverage, 4),
@@ -63,6 +67,8 @@ def summarize_packed_file(path: str | Path, edges_path: str | Path | None = None
         avg_dependency_score=_average(item.get("dependency_score", 0) for item in stats),
         avg_token_utilization=_average(item.get("token_utilization", 0) for item in stats),
         avg_truncation_rate=_average(item.get("truncation_rate", 0) for item in stats),
+        avg_semantic_similarity=_average(item.get("semantic_similarity", 0) for item in stats),
+        avg_redundant_pair_rate=_average(item.get("redundant_pair_rate", 0) for item in stats),
         avg_order_dependency=edge_metrics["avg_order_dependency"],
         edge_coverage=edge_metrics["edge_coverage"],
         weighted_edge_coverage=edge_metrics["weighted_edge_coverage"],

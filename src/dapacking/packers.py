@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import random
 from abc import ABC, abstractmethod
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Iterable
 
 from dapacking.bm25 import BM25Index
 from dapacking.dependency import DEFAULT_WEIGHTS, dependency_score
 from dapacking.documents import Document, PackedSample
+from dapacking.semantic import TfidfIndex, token_jaccard
 from dapacking.tokenization import count_tokens, truncate_to_tokens
 
 
@@ -19,6 +20,9 @@ class PackingConfig:
     seed: int = 42
     dependency_weights: dict[str, float] | None = None
     min_dependency_score: float = 0.11
+    min_similarity_score: float = 0.01
+    candidate_pool_size: int = 80
+    redundancy_threshold: float = 0.72
 
 
 class BasePacker(ABC):
@@ -30,12 +34,16 @@ class BasePacker(ABC):
     def pack(self, documents: list[Document]) -> list[PackedSample]:
         raise NotImplementedError
 
-    def _make_sample(self, index: int, documents: list[Document], truncated_tokens: int = 0) -> PackedSample:
-        content = "\n\n".join(
-            f"<doc id=\"{doc.docid}\" path=\"{doc.path}\">\n{doc.content}\n</doc>" for doc in documents
-        )
+    def _make_sample(
+        self,
+        index: int,
+        documents: list[Document],
+        truncated_tokens: int = 0,
+    ) -> PackedSample:
+        content = "\n\n".join(format_document_for_window(doc) for doc in documents)
         token_count = count_tokens(content)
         dep_score = average_dependency_score(documents, self.config.dependency_weights)
+        semantic_similarity, redundant_pair_rate = average_semantic_metrics(documents)
         return PackedSample(
             sample_id=f"{self.config.method}_{index:06d}",
             method=self.config.method,
@@ -48,38 +56,65 @@ class BasePacker(ABC):
                 "token_utilization": round(token_count / self.config.max_tokens, 4),
                 "truncated_tokens": truncated_tokens,
                 "truncation_rate": round(truncated_tokens / max(token_count + truncated_tokens, 1), 4),
+                "semantic_similarity": round(semantic_similarity, 4),
+                "redundant_pair_rate": round(redundant_pair_rate, 4),
             },
         )
+
+    def _prepare_documents(self, documents: list[Document]) -> tuple[list[Document], dict[str, int]]:
+        prepared: list[Document] = []
+        truncated_by_docid: dict[str, int] = {}
+        for document in documents:
+            prepared_document, overflow = truncate_document_for_window(
+                document,
+                self.config.max_tokens,
+            )
+            prepared.append(prepared_document)
+            truncated_by_docid[prepared_document.docid] = overflow
+        return prepared, truncated_by_docid
+
+    def _sample_truncated_tokens(
+        self,
+        documents: list[Document],
+        truncated_by_docid: dict[str, int],
+    ) -> int:
+        return sum(truncated_by_docid.get(document.docid, 0) for document in documents)
 
 
 class SequentialFillMixin:
     config: PackingConfig
 
     def _pack_in_order(self, documents: Iterable[Document]) -> list[PackedSample]:
+        documents, truncated_by_docid = self._prepare_documents(list(documents))
         samples: list[PackedSample] = []
         current: list[Document] = []
         current_tokens = 0
-        truncated_tokens = 0
 
         for document in documents:
-            doc_tokens = count_tokens(document.content)
-            if doc_tokens > self.config.max_tokens:
-                content, overflow = truncate_to_tokens(document.content, self.config.max_tokens)
-                document = Document(document.docid, content, document.metadata)
-                doc_tokens = count_tokens(document.content)
-                truncated_tokens += overflow
+            doc_tokens = document_window_tokens(document)
 
             if current and current_tokens + doc_tokens > self.config.max_tokens:
-                samples.append(self._make_sample(len(samples), current, truncated_tokens))
+                samples.append(
+                    self._make_sample(
+                        len(samples),
+                        current,
+                        self._sample_truncated_tokens(current, truncated_by_docid),
+                    )
+                )
                 current = []
                 current_tokens = 0
-                truncated_tokens = 0
 
             current.append(document)
             current_tokens += doc_tokens
 
         if current:
-            samples.append(self._make_sample(len(samples), current, truncated_tokens))
+            samples.append(
+                self._make_sample(
+                    len(samples),
+                    current,
+                    self._sample_truncated_tokens(current, truncated_by_docid),
+                )
+            )
 
         return samples
 
@@ -113,99 +148,330 @@ class SameRepoPacker(SequentialFillMixin, BasePacker):
 
 class BM25Packer(BasePacker):
     def pack(self, documents: list[Document]) -> list[PackedSample]:
+        documents, truncated_by_docid = self._prepare_documents(documents)
         remaining = {document.docid: document for document in documents}
+        index = BM25Index(documents)
+        doc_indices = {document.docid: idx for idx, document in enumerate(documents)}
+        token_counts = {document.docid: document_window_tokens(document) for document in documents}
         samples: list[PackedSample] = []
 
         while remaining:
-            anchor = self._select_anchor(list(remaining.values()))
+            anchor = self._select_anchor(list(remaining.values()), token_counts)
             del remaining[anchor.docid]
             current = [anchor]
-            current_tokens = count_tokens(anchor.content)
+            current_tokens = token_counts[anchor.docid]
 
-            while remaining:
-                candidate, score = self._best_candidate(anchor, list(remaining.values()))
-                if candidate is None or score <= 0:
+            ranked_candidates = self._rank_candidates(anchor, list(remaining.values()), index, doc_indices)
+            for candidate, score in ranked_candidates:
+                if score <= 0:
                     break
-
-                candidate_tokens = count_tokens(candidate.content)
+                if candidate.docid not in remaining:
+                    continue
+                candidate_tokens = token_counts[candidate.docid]
                 if current_tokens + candidate_tokens > self.config.max_tokens:
-                    break
+                    continue
 
                 current.append(candidate)
                 current_tokens += candidate_tokens
                 del remaining[candidate.docid]
 
-            samples.append(self._make_sample(len(samples), current))
+            samples.append(
+                self._make_sample(
+                    len(samples),
+                    current,
+                    self._sample_truncated_tokens(current, truncated_by_docid),
+                )
+            )
 
         return samples
 
-    def _select_anchor(self, documents: list[Document]) -> Document:
-        return max(documents, key=lambda doc: count_tokens(doc.content))
+    def _select_anchor(self, documents: list[Document], token_counts: dict[str, int]) -> Document:
+        return max(documents, key=lambda doc: token_counts[doc.docid])
 
-    def _best_candidate(
+    def _rank_candidates(
         self,
         anchor: Document,
         candidates: list[Document],
-    ) -> tuple[Document | None, float]:
-        index = BM25Index(candidates)
-        best_doc: Document | None = None
-        best_score = -1.0
-        for candidate_index, candidate in enumerate(candidates):
-            score = index.score(anchor.content, candidate_index)
-            if score > best_score:
-                best_doc = candidate
-                best_score = score
-        return best_doc, best_score
+        index: BM25Index,
+        doc_indices: dict[str, int],
+    ) -> list[tuple[Document, float]]:
+        query_terms = Counter(index.doc_tokens[doc_indices[anchor.docid]])
+        ranked = [
+            (candidate, index.score_terms(query_terms, doc_indices[candidate.docid]))
+            for candidate in candidates
+        ]
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        if self.config.candidate_pool_size > 0:
+            return ranked[: self.config.candidate_pool_size]
+        return ranked
 
 
-class DependencyAwarePacker(BasePacker):
+class SemanticPacker(BasePacker):
     def pack(self, documents: list[Document]) -> list[PackedSample]:
+        documents, truncated_by_docid = self._prepare_documents(documents)
         remaining = {document.docid: document for document in documents}
+        index = TfidfIndex(documents)
+        doc_indices = {document.docid: idx for idx, document in enumerate(documents)}
+        token_counts = {document.docid: document_window_tokens(document) for document in documents}
         samples: list[PackedSample] = []
 
         while remaining:
-            anchor = self._select_anchor(list(remaining.values()))
+            anchor = self._select_anchor(list(remaining.values()), token_counts)
             del remaining[anchor.docid]
             current = [anchor]
-            current_tokens = count_tokens(anchor.content)
+            current_tokens = token_counts[anchor.docid]
 
-            while remaining:
-                candidate, score = self._best_candidate(current, list(remaining.values()))
-                if candidate is None or score <= 0:
+            ranked_candidates = self._rank_candidates(anchor, list(remaining.values()), index, doc_indices)
+            for candidate, score in ranked_candidates:
+                if score < self.config.min_similarity_score:
                     break
-
-                candidate_tokens = count_tokens(candidate.content)
+                if candidate.docid not in remaining:
+                    continue
+                candidate_tokens = token_counts[candidate.docid]
                 if current_tokens + candidate_tokens > self.config.max_tokens:
-                    break
+                    continue
 
                 current.append(candidate)
                 current_tokens += candidate_tokens
                 del remaining[candidate.docid]
 
-            samples.append(self._make_sample(len(samples), current))
+            samples.append(
+                self._make_sample(
+                    len(samples),
+                    current,
+                    self._sample_truncated_tokens(current, truncated_by_docid),
+                )
+            )
 
         return samples
 
-    def _select_anchor(self, documents: list[Document]) -> Document:
-        return max(documents, key=lambda doc: (len(_candidate_edges(doc, documents)), count_tokens(doc.content)))
+    def _select_anchor(self, documents: list[Document], token_counts: dict[str, int]) -> Document:
+        return max(documents, key=lambda doc: token_counts[doc.docid])
+
+    def _rank_candidates(
+        self,
+        anchor: Document,
+        candidates: list[Document],
+        index: TfidfIndex,
+        doc_indices: dict[str, int],
+    ) -> list[tuple[Document, float]]:
+        anchor_index = doc_indices[anchor.docid]
+        ranked = [
+            (candidate, index.cosine(anchor_index, doc_indices[candidate.docid]))
+            for candidate in candidates
+        ]
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        if self.config.candidate_pool_size > 0:
+            return ranked[: self.config.candidate_pool_size]
+        return ranked
+
+
+class DataSculptLitePacker(BasePacker):
+    """Semantic packing with lightweight integrity, efficiency, and redundancy terms."""
+
+    def pack(self, documents: list[Document]) -> list[PackedSample]:
+        documents, truncated_by_docid = self._prepare_documents(documents)
+        remaining = {document.docid: document for document in documents}
+        index = TfidfIndex(documents)
+        doc_indices = {document.docid: idx for idx, document in enumerate(documents)}
+        token_counts = {document.docid: document_window_tokens(document) for document in documents}
+        samples: list[PackedSample] = []
+
+        while remaining:
+            anchor = self._select_anchor(list(remaining.values()), token_counts)
+            del remaining[anchor.docid]
+            current = [anchor]
+            current_tokens = token_counts[anchor.docid]
+
+            while remaining:
+                candidate, score = self._best_candidate(
+                    current,
+                    list(remaining.values()),
+                    current_tokens,
+                    index,
+                    doc_indices,
+                    token_counts,
+                )
+                if candidate is None or score < self.config.min_similarity_score:
+                    break
+
+                current.append(candidate)
+                current_tokens += token_counts[candidate.docid]
+                del remaining[candidate.docid]
+
+            samples.append(
+                self._make_sample(
+                    len(samples),
+                    current,
+                    self._sample_truncated_tokens(current, truncated_by_docid),
+                )
+            )
+
+        return samples
+
+    def _select_anchor(self, documents: list[Document], token_counts: dict[str, int]) -> Document:
+        return max(documents, key=lambda doc: token_counts[doc.docid])
 
     def _best_candidate(
         self,
         current: list[Document],
         candidates: list[Document],
+        current_tokens: int,
+        index: TfidfIndex,
+        doc_indices: dict[str, int],
+        token_counts: dict[str, int],
+    ) -> tuple[Document | None, float]:
+        best_doc: Document | None = None
+        best_score = -1.0
+        anchor = current[0]
+        anchor_repo = anchor.repo
+        current_indices = [doc_indices[document.docid] for document in current]
+        if self.config.candidate_pool_size > 0 and len(candidates) > self.config.candidate_pool_size:
+            anchor_index = doc_indices[anchor.docid]
+            candidates = sorted(
+                candidates,
+                key=lambda candidate: index.cosine(anchor_index, doc_indices[candidate.docid]),
+                reverse=True,
+            )[: self.config.candidate_pool_size]
+
+        for candidate in candidates:
+            candidate_tokens = token_counts[candidate.docid]
+            if current_tokens + candidate_tokens > self.config.max_tokens:
+                continue
+
+            candidate_index = doc_indices[candidate.docid]
+            similarities = [index.cosine(candidate_index, existing_index) for existing_index in current_indices]
+            anchor_similarity = similarities[0]
+            avg_similarity = sum(similarities) / max(len(similarities), 1)
+            max_similarity = max(similarities) if similarities else 0.0
+            if (
+                anchor_similarity < self.config.min_similarity_score
+                and avg_similarity < self.config.min_similarity_score
+            ):
+                continue
+
+            utilization_after = (current_tokens + candidate_tokens) / max(self.config.max_tokens, 1)
+            fit_bonus = 1.0 - abs(0.92 - min(utilization_after, 1.0))
+            same_repo_bonus = 1.0 if anchor_repo and anchor_repo == candidate.repo else 0.0
+            redundancy_penalty = max(0.0, max_similarity - self.config.redundancy_threshold)
+            semantic_score = 0.7 * anchor_similarity + 0.3 * avg_similarity
+            score = (
+                semantic_score
+                + 0.08 * fit_bonus
+                + 0.05 * same_repo_bonus
+                - 0.35 * redundancy_penalty
+            )
+
+            if score > best_score:
+                best_doc = candidate
+                best_score = score
+
+        return best_doc, best_score
+
+
+class DependencyAwarePacker(BasePacker):
+    def pack(self, documents: list[Document]) -> list[PackedSample]:
+        documents, truncated_by_docid = self._prepare_documents(documents)
+        remaining = {document.docid: document for document in documents}
+        token_counts = {document.docid: document_window_tokens(document) for document in documents}
+        dependency_scores = self._build_dependency_scores(documents)
+        samples: list[PackedSample] = []
+
+        while remaining:
+            anchor = self._select_anchor(list(remaining.values()), token_counts, dependency_scores)
+            del remaining[anchor.docid]
+            current = [anchor]
+            current_tokens = token_counts[anchor.docid]
+            current_repo = anchor.repo
+
+            while remaining:
+                candidates = [
+                    document
+                    for document in remaining.values()
+                    if not current_repo or document.repo == current_repo
+                ]
+                if not candidates:
+                    break
+
+                candidate, score = self._best_candidate(
+                    current,
+                    candidates,
+                    current_tokens,
+                    token_counts,
+                    dependency_scores,
+                )
+                if candidate is None or score <= 0:
+                    break
+
+                current.append(candidate)
+                current_tokens += token_counts[candidate.docid]
+                del remaining[candidate.docid]
+
+            samples.append(
+                self._make_sample(
+                    len(samples),
+                    current,
+                    self._sample_truncated_tokens(current, truncated_by_docid),
+                )
+            )
+
+        return samples
+
+    def _build_dependency_scores(self, documents: list[Document]) -> dict[str, dict[str, float]]:
+        by_repo: dict[str, list[Document]] = defaultdict(list)
+        for document in documents:
+            by_repo[document.repo or "__unknown__"].append(document)
+
+        scores: dict[str, dict[str, float]] = defaultdict(dict)
+        for repo_documents in by_repo.values():
+            for source in repo_documents:
+                for target in repo_documents:
+                    if source.docid == target.docid:
+                        continue
+                    evidence = dependency_score(
+                        source,
+                        target,
+                        self.config.dependency_weights or DEFAULT_WEIGHTS,
+                    )
+                    if evidence.score >= self.config.min_dependency_score:
+                        scores[source.docid][target.docid] = evidence.score
+        return scores
+
+    def _select_anchor(
+        self,
+        documents: list[Document],
+        token_counts: dict[str, int],
+        dependency_scores: dict[str, dict[str, float]],
+    ) -> Document:
+        return max(
+            documents,
+            key=lambda doc: (len(dependency_scores.get(doc.docid, {})), token_counts[doc.docid]),
+        )
+
+    def _best_candidate(
+        self,
+        current: list[Document],
+        candidates: list[Document],
+        current_tokens: int,
+        token_counts: dict[str, int],
+        dependency_scores: dict[str, dict[str, float]],
     ) -> tuple[Document | None, float]:
         best_doc: Document | None = None
         best_score = -1.0
 
         for candidate in candidates:
+            candidate_tokens = token_counts[candidate.docid]
+            if current_tokens + candidate_tokens > self.config.max_tokens:
+                continue
+
             dep = max(
-                dependency_score(existing, candidate, self.config.dependency_weights or DEFAULT_WEIGHTS).score
+                dependency_scores.get(existing.docid, {}).get(candidate.docid, 0.0)
                 for existing in current
             )
             if dep < self.config.min_dependency_score:
                 continue
             capacity_bonus = 1.0 - min(
-                count_tokens(candidate.content) / max(self.config.max_tokens, 1),
+                candidate_tokens / max(self.config.max_tokens, 1),
                 1.0,
             )
             score = dep + 0.05 * capacity_bonus
@@ -234,12 +500,49 @@ def average_dependency_score(
     return total / max(count, 1)
 
 
+def format_document_for_window(document: Document) -> str:
+    return f"<doc id=\"{document.docid}\" path=\"{document.path}\">\n{document.content}\n</doc>"
+
+
+def document_window_tokens(document: Document) -> int:
+    return count_tokens(format_document_for_window(document))
+
+
+def truncate_document_for_window(document: Document, max_tokens: int) -> tuple[Document, int]:
+    if document_window_tokens(document) <= max_tokens:
+        return document, 0
+
+    wrapper_tokens = count_tokens(format_document_for_window(Document(document.docid, "", document.metadata)))
+    content_budget = max(max_tokens - wrapper_tokens, 1)
+    content, overflow = truncate_to_tokens(document.content, content_budget)
+    return Document(document.docid, content, document.metadata), overflow
+
+
+def average_semantic_metrics(documents: list[Document]) -> tuple[float, float]:
+    if len(documents) < 2:
+        return 0.0, 0.0
+
+    total = 0.0
+    redundant = 0
+    count = 0
+    for i, source in enumerate(documents):
+        for target in documents[i + 1 :]:
+            similarity = token_jaccard(source, target)
+            total += similarity
+            if similarity >= 0.72:
+                redundant += 1
+            count += 1
+    return total / max(count, 1), redundant / max(count, 1)
+
+
 def build_packer(config: PackingConfig) -> BasePacker:
     packers = {
         "random": RandomPacker,
         "length_aware": LengthAwarePacker,
         "same_repo": SameRepoPacker,
         "bm25": BM25Packer,
+        "semantic": SemanticPacker,
+        "datasculpt_lite": DataSculptLitePacker,
         "dependency_aware": DependencyAwarePacker,
     }
     try:
@@ -247,11 +550,3 @@ def build_packer(config: PackingConfig) -> BasePacker:
     except KeyError as exc:
         available = ", ".join(sorted(packers))
         raise ValueError(f"Unknown packing method '{config.method}'. Available: {available}") from exc
-
-
-def _candidate_edges(anchor: Document, documents: list[Document]) -> list[Document]:
-    return [
-        document
-        for document in documents
-        if document.docid != anchor.docid and dependency_score(anchor, document).score >= 0.11
-    ]

@@ -106,13 +106,14 @@ Current methods:
 - `length_aware`: sort by length and fill windows.
 - `same_repo`: group documents by repository.
 - `bm25`: use lexical retrieval from an anchor document.
+- `semantic`: use a lightweight TF-IDF cosine index as an early semantic
+  baseline.
+- `datasculpt_lite`: combine TF-IDF coherence, token-fit efficiency,
+  repository integrity, and redundancy penalty.
 - `dependency_aware`: greedily add documents with structural dependency edges.
 
 Planned methods:
 
-- `semantic`: embedding similarity baseline.
-- `datasculpt_lite`: lightweight DataSculpt-style semantic/integrity/efficiency
-  packing.
 - `bm25_structure_rerank`: retrieve with BM25, rerank by dependency score.
 - `semantic_structure_rerank`: retrieve with embeddings, rerank by dependency
   score.
@@ -196,10 +197,11 @@ weighted_edge_coverage
 
 Semantic and redundancy metrics:
 
-- `semantic_similarity`: mean pairwise cosine similarity among document
-  embeddings in a window.
-- `redundant_pair_rate`: fraction of document pairs whose embedding cosine
-  similarity or token Jaccard similarity exceeds a high threshold.
+- `semantic_similarity`: mean pairwise token-Jaccard similarity in the summary
+  statistics; semantic/DataSculpt-lite packers use a TF-IDF cosine index for
+  candidate selection.
+- `redundant_pair_rate`: fraction of document pairs whose token-Jaccard
+  similarity exceeds a high threshold.
 
 ### 6.2 Post-Training Metrics
 
@@ -395,12 +397,10 @@ Avoid overclaiming:
 
 ## 12. Near-Term TODOs
 
-1. Add semantic/DataSculpt-lite packing baseline.
-2. Add same-repo ratio, same-directory ratio, edge coverage, and redundancy
-   metrics to `scripts/summarize_packing.py`.
-3. Add a real tokenizer option, replacing the current lightweight token counter
+1. Add structure-aware reranking on top of BM25 and semantic retrieval.
+2. Add a real tokenizer option, replacing the current lightweight token counter
    for training-grade packing.
-4. Build multi-source repository data preprocessing:
+3. Build multi-source repository data preprocessing:
    source, tests, README, docs, configs, examples, issues, commits.
-5. Add server-oriented training configs for 7B + 8K LoRA/QLoRA.
-6. Add evaluation scripts for RepoBench, passkey, needle, and context gain.
+4. Add server-oriented training configs for 7B + 8K LoRA/QLoRA.
+5. Add evaluation scripts for RepoBench, passkey, needle, and context gain.

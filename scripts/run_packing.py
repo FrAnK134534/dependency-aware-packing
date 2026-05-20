@@ -23,7 +23,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, help="Output JSONL packed samples.")
     parser.add_argument(
         "--method",
-        choices=["random", "length_aware", "same_repo", "bm25", "dependency_aware"],
+        choices=[
+            "random",
+            "length_aware",
+            "same_repo",
+            "bm25",
+            "semantic",
+            "datasculpt_lite",
+            "dependency_aware",
+        ],
         help="Packing method.",
     )
     parser.add_argument("--max-tokens", type=int, help="Maximum tokens per packed sample.")
@@ -33,6 +41,24 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Minimum dependency score for dependency-aware packing.",
+    )
+    parser.add_argument(
+        "--min-similarity-score",
+        type=float,
+        default=None,
+        help="Minimum TF-IDF similarity for semantic packing.",
+    )
+    parser.add_argument(
+        "--candidate-pool-size",
+        type=int,
+        default=None,
+        help="Maximum ranked candidates considered per anchor; use 0 for all candidates.",
+    )
+    parser.add_argument(
+        "--redundancy-threshold",
+        type=float,
+        default=None,
+        help="Pair similarity threshold where DataSculpt-lite starts penalizing redundancy.",
     )
     return parser.parse_args()
 
@@ -51,6 +77,21 @@ def main() -> None:
         if args.min_dependency_score is not None
         else float(config.get("min_dependency_score", 0.11))
     )
+    min_similarity_score = (
+        args.min_similarity_score
+        if args.min_similarity_score is not None
+        else float(config.get("min_similarity_score", 0.01))
+    )
+    candidate_pool_size = (
+        args.candidate_pool_size
+        if args.candidate_pool_size is not None
+        else int(config.get("candidate_pool_size", 80))
+    )
+    redundancy_threshold = (
+        args.redundancy_threshold
+        if args.redundancy_threshold is not None
+        else float(config.get("redundancy_threshold", 0.72))
+    )
 
     if not input_path:
         raise SystemExit("--input or input_path in config is required")
@@ -65,6 +106,9 @@ def main() -> None:
             seed=seed,
             dependency_weights=config.get("dependency_weights"),
             min_dependency_score=min_dependency_score,
+            min_similarity_score=min_similarity_score,
+            candidate_pool_size=candidate_pool_size,
+            redundancy_threshold=redundancy_threshold,
         )
     )
     samples = packer.pack(documents)

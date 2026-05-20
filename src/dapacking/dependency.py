@@ -88,11 +88,15 @@ def has_import_relation(source: Document, target: Document) -> bool:
 def has_test_source_relation(source: Document, target: Document) -> bool:
     if source.repo and target.repo and source.repo != target.repo:
         return False
+    if source.source_type not in {"source", "script"}:
+        return False
 
     source_stem = PurePosixPath(source.path).stem.replace("test_", "").replace("_test", "")
+    if len(source_stem) < 3 or source_stem in {"__init__", "conftest"}:
+        return False
     target_name = target.filename.lower()
     target_path = target.path.lower()
-    if "test" not in target_name and "/test" not in target_path and "tests/" not in target_path:
+    if target.source_type != "test" and "test" not in target_name and "/test" not in target_path and "tests/" not in target_path:
         return False
     return source_stem.lower() in target.content.lower() or source_stem.lower() in target_name
 
@@ -100,7 +104,15 @@ def has_test_source_relation(source: Document, target: Document) -> bool:
 def has_readme_code_relation(source: Document, target: Document) -> bool:
     if source.repo and target.repo and source.repo != target.repo:
         return False
-    return source.source_type == "readme" and target.suffix in CODE_SUFFIXES
+    if source.source_type != "readme" or target.suffix not in CODE_SUFFIXES:
+        return False
+    content = source.content.lower()
+    target_stem = PurePosixPath(target.path).stem.lower()
+    return (
+        target.path.lower() in content
+        or target.filename.lower() in content
+        or (len(target_stem) >= 3 and target_stem in content)
+    )
 
 
 def has_docs_code_relation(source: Document, target: Document) -> bool:
