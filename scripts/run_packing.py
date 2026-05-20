@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-tokens", type=int, help="Maximum tokens per packed sample.")
     parser.add_argument("--seed", type=int, default=None, help="Random seed.")
+    parser.add_argument(
+        "--min-dependency-score",
+        type=float,
+        default=None,
+        help="Minimum dependency score for dependency-aware packing.",
+    )
     return parser.parse_args()
 
 
@@ -40,6 +46,11 @@ def main() -> None:
     method = args.method or config.get("method", "dependency_aware")
     max_tokens = args.max_tokens or int(config.get("max_tokens", 4096))
     seed = args.seed if args.seed is not None else int(config.get("seed", 42))
+    min_dependency_score = (
+        args.min_dependency_score
+        if args.min_dependency_score is not None
+        else float(config.get("min_dependency_score", 0.11))
+    )
 
     if not input_path:
         raise SystemExit("--input or input_path in config is required")
@@ -53,6 +64,7 @@ def main() -> None:
             max_tokens=max_tokens,
             seed=seed,
             dependency_weights=config.get("dependency_weights"),
+            min_dependency_score=min_dependency_score,
         )
     )
     samples = packer.pack(documents)

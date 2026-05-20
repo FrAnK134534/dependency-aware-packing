@@ -18,6 +18,7 @@ class PackingConfig:
     max_tokens: int
     seed: int = 42
     dependency_weights: dict[str, float] | None = None
+    min_dependency_score: float = 0.11
 
 
 class BasePacker(ABC):
@@ -201,7 +202,7 @@ class DependencyAwarePacker(BasePacker):
                 dependency_score(existing, candidate, self.config.dependency_weights or DEFAULT_WEIGHTS).score
                 for existing in current
             )
-            if dep <= 0:
+            if dep < self.config.min_dependency_score:
                 continue
             capacity_bonus = 1.0 - min(
                 count_tokens(candidate.content) / max(self.config.max_tokens, 1),
@@ -252,5 +253,5 @@ def _candidate_edges(anchor: Document, documents: list[Document]) -> list[Docume
     return [
         document
         for document in documents
-        if document.docid != anchor.docid and dependency_score(anchor, document).score > 0
+        if document.docid != anchor.docid and dependency_score(anchor, document).score >= 0.11
     ]

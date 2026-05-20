@@ -34,9 +34,17 @@ def read_documents(path: str | Path) -> list[Document]:
     return documents
 
 
-def write_samples(path: str | Path, samples: Iterable[PackedSample]) -> None:
+def write_jsonl(path: str | Path, records: Iterable[dict]) -> None:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as handle:
-        for sample in samples:
-            handle.write(json.dumps(sample.to_json(), ensure_ascii=False) + "\n")
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def write_documents(path: str | Path, documents: Iterable[Document]) -> None:
+    write_jsonl(path, (document.to_json() for document in documents))
+
+
+def write_samples(path: str | Path, samples: Iterable[PackedSample]) -> None:
+    write_jsonl(path, (sample.to_json() for sample in samples))

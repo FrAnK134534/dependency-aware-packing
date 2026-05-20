@@ -11,7 +11,9 @@ DEFAULT_WEIGHTS = {
     "import_relation": 1.0,
     "test_source_relation": 0.9,
     "readme_code_relation": 0.6,
+    "docs_code_relation": 0.6,
     "config_script_relation": 0.5,
+    "example_code_relation": 0.5,
     "same_directory": 0.25,
     "same_repo": 0.1,
 }
@@ -50,7 +52,9 @@ def dependency_score(
         "import_relation": has_import_relation(source, target),
         "test_source_relation": has_test_source_relation(source, target),
         "readme_code_relation": has_readme_code_relation(source, target),
+        "docs_code_relation": has_docs_code_relation(source, target),
         "config_script_relation": has_config_script_relation(source, target),
+        "example_code_relation": has_example_code_relation(source, target),
         "same_directory": has_same_directory(source, target),
         "same_repo": bool(source.repo and source.repo == target.repo),
     }
@@ -96,7 +100,16 @@ def has_test_source_relation(source: Document, target: Document) -> bool:
 def has_readme_code_relation(source: Document, target: Document) -> bool:
     if source.repo and target.repo and source.repo != target.repo:
         return False
-    return source.filename.lower().startswith("readme") and target.suffix in CODE_SUFFIXES
+    return source.source_type == "readme" and target.suffix in CODE_SUFFIXES
+
+
+def has_docs_code_relation(source: Document, target: Document) -> bool:
+    if source.repo and target.repo and source.repo != target.repo:
+        return False
+    if source.source_type != "docs" or target.suffix not in CODE_SUFFIXES:
+        return False
+    target_stem = PurePosixPath(target.path).stem.lower()
+    return target_stem in source.content.lower() or target.filename.lower() in source.content.lower()
 
 
 def has_config_script_relation(source: Document, target: Document) -> bool:
@@ -104,9 +117,18 @@ def has_config_script_relation(source: Document, target: Document) -> bool:
         return False
     source_name = source.filename.lower()
     target_name = target.filename.lower()
-    is_config = source_name in CONFIG_NAMES or source.suffix in {".yaml", ".yml", ".toml", ".ini", ".cfg"}
-    is_script = target.suffix in CODE_SUFFIXES or target_name in {"train.sh", "run.sh"}
+    is_config = source.source_type == "config" or source_name in CONFIG_NAMES
+    is_script = target.source_type == "script" or target_name in {"train.sh", "run.sh"}
     return is_config and is_script
+
+
+def has_example_code_relation(source: Document, target: Document) -> bool:
+    if source.repo and target.repo and source.repo != target.repo:
+        return False
+    if source.source_type != "example" or target.suffix not in CODE_SUFFIXES:
+        return False
+    target_stem = PurePosixPath(target.path).stem.lower()
+    return target_stem in source.content.lower() or target.filename.lower() in source.content.lower()
 
 
 def has_same_directory(source: Document, target: Document) -> bool:

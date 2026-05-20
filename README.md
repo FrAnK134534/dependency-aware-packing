@@ -124,6 +124,34 @@ python scripts/summarize_packing.py \
   --output outputs/packing_summary.csv
 ```
 
+Build a local repository corpus:
+
+```bash
+python scripts/data/build_repo_corpus.py \
+  --manifest data/raw/repo_manifest.txt \
+  --output data/processed/documents.jsonl
+
+python scripts/data/build_dependency_edges.py \
+  --input data/processed/documents.jsonl \
+  --output data/processed/dependency_edges.jsonl
+
+python scripts/data/split_by_repo.py \
+  --documents data/processed/documents.jsonl \
+  --edges data/processed/dependency_edges.jsonl \
+  --output-dir data/processed/splits
+```
+
+Generate a packing matrix for one split:
+
+```bash
+python scripts/run_packing_matrix.py \
+  --input data/processed/splits/train_docs.jsonl \
+  --output-dir data/processed/packed/train_8192 \
+  --max-tokens 8192 \
+  --edges data/processed/splits/train_edges.jsonl \
+  --summary data/processed/packed/train_8192/summary.csv
+```
+
 ## Current Baselines
 
 - `random`: randomly shuffles documents and fills context windows.

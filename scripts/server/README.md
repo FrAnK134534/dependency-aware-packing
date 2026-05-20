@@ -17,6 +17,14 @@ run_eval_suite.sh
 collect_run_summary.py
 ```
 
+Current starter scripts:
+
+```text
+build_dataset_pipeline.sh
+run_packing_matrix.sh
+run_7b_8k_qlora.sh
+```
+
 Every server run should save:
 
 ```text

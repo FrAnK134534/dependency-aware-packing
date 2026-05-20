@@ -82,7 +82,9 @@ experiments/notebooks/       Analysis notebooks
 experiments/logs/            Small run summaries
 outputs/                     Generated outputs, gitignored
 scripts/
+  data/                    Corpus, dependency edge, and repo split builders
   run_packing.py             Generate packed JSONL files
+  run_packing_matrix.py      Generate multiple packing baselines
   summarize_packing.py       Summarize packing outputs
   server/                    Future server launch scripts
 src/dapacking/

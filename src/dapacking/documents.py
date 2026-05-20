@@ -36,6 +36,17 @@ class Document:
     def filename(self) -> str:
         return PurePosixPath(self.path).name
 
+    @property
+    def source_type(self) -> str:
+        return str(self.metadata.get("source_type", "unknown"))
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "docid": self.docid,
+            "content": self.content,
+            "metadata": self.metadata,
+        }
+
 
 @dataclass
 class PackedSample:
