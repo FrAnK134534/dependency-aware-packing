@@ -1,90 +1,333 @@
-# 项目设想与汇报：依赖感知长上下文 Packing
+# 项目设想与导师汇报：Dependency-Aware Packing for Long-Context Adaptation
 
-## 1. 我想做什么
+## 1. 一句话概括
 
-我现在想做的不是单纯训练一个更大的模型，也不是提出新的模型结构，而是研究一个更基础但很关键的问题：
+我想研究的问题是：
 
-> **长上下文训练时，应该把什么内容放进同一个上下文窗口里？**
+> **在长上下文适配中，训练样本不应该只是被拼长，而应该被组织成包含“可学习上下文依赖”的长上下文窗口。**
 
-现在很多长上下文模型可以支持 8K、16K 甚至更长输入。但模型能看这么长，并不代表它真的学会了利用长上下文。
+现有很多 packing 方法主要考虑：
 
-如果训练时只是把很多无关文档拼在一起，模型虽然看到了很长的序列，但这些序列里没有清楚的上下文关系，模型不一定能学到“前面的内容如何帮助理解后面的内容”。
+```text
+窗口是否被填满；
+文档是否同主题；
+BM25 是否检索相关；
+embedding 是否语义相似；
+文档是否完整、是否截断少。
+```
 
-所以我想研究：
+这些目标都重要，但它们没有直接回答一个问题：
 
-> 在固定模型、固定训练预算、固定 context length 的情况下，**不同 packing 策略是否会影响模型的长上下文能力**？
+> **A 放在 B 前面，是否真的能帮助模型理解或预测 B？**
 
-进一步地，我想提出一种新的 packing 思路：
+因此，我希望提出一个新的数据构造目标：
 
-> **Dependency-Aware Packing：把存在依赖关系的材料放进同一个长上下文窗口，而不是只把相似或同主题材料放在一起。**
+> **Dependency-Aware Packing：以“上下文依赖/上下文增益”为目标来组织长上下文训练样本。**
+
+这个方法不是单纯面向代码仓库的规则方法，而是一个更一般的 packing 框架：
+
+```text
+有显式结构时：利用结构依赖，例如代码仓库、论文引用、网页链接；
+没有显式结构时：利用隐式依赖，例如 loss reduction / context gain。
+```
+
+代码仓库多源上下文会作为第一阶段主实验场景，因为它依赖关系清晰、可解释、容易构造 controlled experiment。后续再用弱结构或隐式依赖数据做泛化验证。
 
 ---
 
-## 2. 什么是 Packing
+## 2. 为什么做 Packing 策略优化
 
-Packing 可以理解为：
+长上下文模型能接收 8K、16K 甚至更长输入，但这不等于模型真的学会了使用长上下文。
 
-> 把多个较短的文件、文档或片段，拼成一个固定长度的训练样本。
+训练时如果只是把无关内容拼成长文本，模型看到的是长序列，但不一定能学到跨文档关系。
 
-例如模型训练时需要 8192 tokens 的输入窗口。如果一个文件只有 1000 tokens，单独训练会浪费很多空间，所以通常会把多个文件拼起来。
-
-常见做法包括：
+例如下面两个训练窗口长度可能一样：
 
 ```text
-Random Packing：随机拼接
-Length-Aware Packing：尽量把窗口填满
-Same-Repo Packing：把同一个仓库的文件放一起
-BM25 Packing：把关键词相关的文件放一起
-Semantic Packing：把语义相似的文件放一起
+窗口 A：
+随机网页 1 + 随机代码文件 + 随机论文段落 + 随机日志
+
+窗口 B：
+README + config + model.py + train.py + test_model.py
 ```
 
-这些方法有用，但它们都有一个共同问题：
+窗口 A 只是“长”。  
+窗口 B 中的内容存在明确关系：
 
-> 它们不直接判断“一个文件是否真的能帮助理解另一个文件”。
+```text
+README 说明项目；
+config 影响 train.py；
+model.py 定义模型；
+train.py 调用 model.py；
+test_model.py 验证 model.py。
+```
 
-这正是我想改进的地方。
+模型在窗口 B 中更可能学到：
+
+```text
+前文如何帮助后文；
+配置如何对应脚本；
+定义如何被调用；
+说明文档如何映射到实现；
+测试如何反映代码预期行为。
+```
+
+所以这个课题的核心不是“把上下文做长”，而是：
+
+> **让长上下文窗口里的内容更有学习价值。**
 
 ---
 
-## 3. 我的核心想法
+## 3. 与已有方法的关系
 
-我的核心想法是：
+这个方向可以和 DataSculpt、BM25 packing、semantic packing 等已有方法形成清晰关系。
 
-> 长上下文窗口不应该只是“长”，而应该包含有学习价值的上下文依赖。
+### 3.1 现有方法主要优化什么
 
-例如在一个代码项目中：
+常见 packing 策略可以概括为：
+
+| 方法 | 主要目标 | 局限 |
+|---|---|---|
+| Random Packing | 随机拼接，作为最弱 baseline | 内容关系弱 |
+| Length-Aware Packing | 尽量填满窗口 | 只关注容量，不关注学习价值 |
+| Same-Repo / Same-Topic Packing | 粗粒度相关 | 同仓库/同主题不等于有依赖 |
+| BM25 Packing | 关键词相关 | 词面相关不等于上下文帮助 |
+| Semantic Packing | embedding 语义相似 | 语义相似不等于依赖 |
+| DataSculpt-style Packing | 语义相关、完整性、同质性、效率 | 没有显式优化上下文增益 |
+
+DataSculpt 的价值在于它证明了：
+
+> 长上下文训练数据不能简单随机拼接，需要系统的数据组织策略。
+
+我的工作可以借鉴它的 coarse-to-fine 思路：
 
 ```text
-README.md          说明项目怎么用
-config/train.yaml  保存训练配置
-src/model.py       定义模型结构
-src/train.py       调用模型并读取配置
-tests/test_model.py 测试模型行为
+先用语义/BM25/结构信息召回候选集合；
+再在候选集合内做更细粒度的 packing 优化。
 ```
 
-这些文件之间是有关系的。把它们放在同一个上下文窗口中，模型更可能学到：
+但我的目标函数不同：
+
+> DataSculpt 主要关注相似性、完整性、效率；  
+> 我进一步关注一个窗口内部是否存在可学习的上下文依赖。
+
+### 3.2 我的核心区别
+
+已有方法通常问：
 
 ```text
-文档如何对应代码；
-配置如何影响脚本；
-函数和类如何被调用；
-测试如何反映代码预期行为；
-跨文件信息如何关联。
+这些文档像不像？
+这些文档是否来自同一主题？
+这些文档能否填满窗口？
 ```
 
-相比之下，如果只是随机拼接几个文件，即使窗口被填满了，也不一定有这种学习价值。
+我的方法问：
 
-因此，我的项目核心是：
+```text
+A 是否能帮助理解或预测 B？
+```
 
-> 用依赖关系指导长上下文训练数据的构造。
+这就是 Dependency-Aware Packing 的核心。
 
 ---
 
-## 4. 数据不只包含代码
+## 4. Dependency 的定义：显式依赖与隐式依赖
 
-虽然我会以代码仓库作为主要场景，但上下文并不只包含代码文件。
+为了避免方法只局限于代码仓库，我把 dependency 分成两类。
 
-我希望使用的是 **代码仓库多源上下文**，包括：
+### 4.1 显式结构依赖
+
+当数据有清晰结构时，可以用结构关系作为低成本、可解释的 dependency signal。
+
+典型场景包括：
+
+```text
+代码仓库：import、source-test、README-code、config-script、issue-file、commit-file
+论文数据：citation、section hierarchy、background-method、method-experiment
+网页数据：hyperlink、same domain、navigation hierarchy、anchor text
+技术文档：definition-example、API doc-usage example、tutorial-code
+```
+
+以代码仓库为例：
+
+| 依赖关系 | 含义 |
+|---|---|
+| source -> test | 测试文件验证源码行为 |
+| README/docs -> source | 文档解释或说明代码 |
+| config -> script | 配置文件影响运行或训练脚本 |
+| API doc -> usage example | API 文档帮助理解调用方式 |
+| issue/PR -> changed file | issue 或 PR 描述修改需求 |
+| commit message -> changed file | commit message 解释修改原因 |
+| source -> source | import / call / same module |
+
+这些关系可以组成一个 dependency graph：
+
+```text
+节点：文档、文件、段落、代码片段
+边：A -> B，表示 A 可能帮助理解或预测 B
+权重：依赖强度
+```
+
+例如：
+
+```text
+import relation: 1.0
+source-test relation: 0.9
+config-script relation: 0.7
+README-code relation: 0.6
+docs-code relation: 0.6
+same-directory: 0.25
+same-repo: 0.1
+```
+
+这里 same-repo 只能作为弱信号，因为它太粗。如果权重过高，方法会退化成 same-repo packing。
+
+### 4.2 隐式上下文依赖
+
+对于很多普通文本数据，未必有明确结构边。
+
+这时可以使用更通用的定义：
+
+```text
+dependency(A -> B) = loss(B alone) - loss(A + B)
+```
+
+含义是：
+
+> 如果把 A 放在 B 前面后，模型预测 B 的 loss 降低，说明 A 对 B 有上下文帮助。
+
+这也可以叫：
+
+```text
+context gain(A -> B)
+```
+
+这个定义更通用，适用于：
+
+```text
+技术文档；
+论文段落；
+Wikipedia / linked pages；
+multi-hop QA support documents；
+普通多文档集合。
+```
+
+问题是全量两两计算太贵，所以我会采用两阶段策略：
+
+```text
+第一步：用 BM25 / embedding / topic / metadata 召回 top-k 候选；
+第二步：只对候选 pair 计算 loss reduction / context gain；
+第三步：用这个依赖分数指导 packing。
+```
+
+这样方法就不是代码仓库专用，而是：
+
+> 有结构时用显式结构依赖；没有结构时用模型增益估计隐式依赖。
+
+---
+
+## 5. 方法框架
+
+整体方法可以抽象成三步。
+
+### 5.1 候选召回
+
+先缩小搜索空间，避免全局两两比较。
+
+候选来源可以是：
+
+```text
+same repo / same topic
+BM25 检索
+embedding similarity
+metadata relation
+section / hyperlink / citation relation
+```
+
+这一步不直接决定 packing，只是找可能相关的候选。
+
+### 5.2 Dependency Scoring
+
+对候选文档对计算 dependency score。
+
+显式场景：
+
+```text
+dependency_score(A -> B)
+= structure_relation_score(A -> B)
+```
+
+隐式场景：
+
+```text
+dependency_score(A -> B)
+= loss(B alone) - loss(A + B)
+```
+
+混合场景：
+
+```text
+dependency_score(A -> B)
+= alpha * structure_score
++ beta * semantic_score
++ gamma * loss_reduction_score
+```
+
+第一版不一定要全部做完，可以按阶段推进：
+
+```text
+v1：结构依赖
+v2：结构依赖 + BM25/semantic candidate
+v3：结构/semantic candidate + loss-reduction reranking
+```
+
+### 5.3 Dependency-Aware Packing
+
+给定一个 context window，贪心加入最有依赖价值的文档。
+
+基本流程：
+
+```text
+1. 选择一个 anchor document
+2. 找候选文档
+3. 计算候选与当前窗口的 dependency score
+4. 优先加入对窗口已有内容存在强依赖的文档
+5. 控制 max tokens、截断率、冗余度
+6. 输出 packed training sample
+```
+
+打分形式可以是：
+
+```text
+score(candidate, window)
+= dependency_score(candidate, window)
++ capacity_bonus
+- truncation_penalty
+- redundancy_penalty
+```
+
+其中 dependency 是主目标，capacity 和 integrity 是约束项。
+
+---
+
+## 6. 数据集构建
+
+数据集构建分成两个层次：主实验数据和辅助泛化数据。
+
+### 6.1 主实验：代码仓库多源上下文
+
+主实验建议使用代码仓库多源数据，而不是只使用纯代码文件。
+
+原因是：
+
+```text
+真实软件理解不只依赖 source code；
+README、docs、config、tests、examples、issues、commits 都是上下文；
+多源材料之间有清晰依赖关系；
+更适合验证 dependency-aware packing。
+```
+
+建议收集：
 
 ```text
 source code
@@ -93,398 +336,546 @@ README
 docs
 config files
 examples
-issue / PR description
-commit message
+scripts
+issue / PR descriptions
+commit messages
 benchmark logs
 API usage examples
 ```
 
-这样做的好处是：
+第一阶段最小可行数据：
 
-1. 这些材料之间有明确依赖关系，便于定义方法。
-2. 它更接近真实开发场景，因为开发者理解代码时也会看 README、文档、配置、测试和 issue。
-3. 可以用 RepoBench、跨文件补全等任务评估模型是否真的学会利用跨文件上下文。
+```text
+source code
+tests
+README
+docs
+config
+examples/scripts
+```
+
+issue、PR、commit、benchmark logs 可以作为第二阶段增强。
+
+统一 JSONL 格式：
+
+```json
+{
+  "docid": "repo_a:src/train.py",
+  "content": "...",
+  "metadata": {
+    "repo": "repo_a",
+    "path": "src/train.py",
+    "language": "python",
+    "source_type": "source",
+    "license": "mit"
+  }
+}
+```
+
+依赖边文件：
+
+```json
+{
+  "repo": "repo_a",
+  "source_docid": "repo_a:config/train.yaml",
+  "target_docid": "repo_a:src/train.py",
+  "relation": "config_script",
+  "weight": 0.7
+}
+```
+
+数据 split 必须按 repo 划分：
+
+```text
+train repos
+validation repos
+test repos
+```
+
+不能按文件随机切分，否则同一个 repo 的信息会同时出现在训练和测试里，造成数据泄漏。
+
+### 6.2 辅助实验：弱结构或隐式依赖数据
+
+为了回应“是否只能用于代码仓库”的问题，可以增加一个辅助场景。
+
+可选数据：
+
+```text
+技术文档：API docs、tutorials、usage examples
+论文数据：section、citation、Qasper-style QA
+Wikipedia / multi-hop QA：linked pages、support documents
+```
+
+这一部分不一定一开始做完整大规模训练，可以先做：
+
+```text
+packing quality analysis
+context gain 抽样分析
+小规模训练或验证
+```
+
+它的作用是证明：
+
+> dependency-aware objective 不依赖代码结构本身；代码结构只是显式依赖的一种实现。
+
+### 6.3 数据处理流程
+
+整体流程：
+
+```text
+1. 收集 repo 或文档集合
+2. 过滤 license 不清晰、太小、太乱的数据
+3. 提取 source_type、repo、path、language 等 metadata
+4. 对长文件进行切分
+5. 构建 dependency_edges.jsonl
+6. 按 repo 或文档集合划分 train/val/test
+7. 对每个 split 生成不同 packing 版本
+8. 统计 packing 指标
+9. 将 packed JSONL 用于训练和评测
+```
 
 ---
 
-## 5. 什么叫“依赖关系”
+## 7. 实验设计
 
-这里的依赖关系不是只指代码 import，也包括更广义的上下文帮助关系。
+实验分为四层。
 
-例如：
+### 7.1 Packing 数据质量实验
 
-| 依赖关系 | 含义 |
-|---|---|
-| README -> code | README 说明代码如何使用 |
-| docs -> implementation | 文档解释实现逻辑 |
-| config -> script | 配置文件影响脚本运行 |
-| source -> test | 测试文件验证源码行为 |
-| API doc -> usage example | API 文档帮助理解调用方式 |
-| issue -> changed file | issue 描述需要修改的文件 |
-| commit message -> changed file | commit message 解释文件修改原因 |
+不训练模型，先比较不同 packing 方法生成的数据。
 
-我会给这些关系设计一个轻量的 dependency score：
-
-```text
-dependency_score(A -> B)
-```
-
-它表示：
-
-> A 放在 B 前面，是否可能帮助模型理解或预测 B。
-
-第一版会优先使用可解释规则，而不是一开始训练复杂打分模型。这样方法更可控，也更容易向论文读者解释。
-
----
-
-## 6. 和已有方法相比，我的不同点
-
-已有 packing 方法通常关注：
-
-```text
-窗口是否填满；
-文档是否来自同一仓库；
-关键词是否相似；
-embedding 语义是否接近。
-```
-
-我的方法关注：
-
-```text
-窗口内部是否存在可学习的上下文依赖。
-```
-
-举例来说：
-
-```text
-BM25 可能认为两个文件相关，因为它们都出现 model、train、loss 等词。
-Semantic packing 可能认为两个文件相关，因为它们主题相似。
-Dependency-aware packing 会进一步问：一个文件是否定义、解释、配置或测试了另一个文件？
-```
-
-所以我的核心区别是：
-
-> 从“相似内容拼接”转向“依赖关系驱动的样本构造”。
-
----
-
-## 7. 8 卡 NVLink 服务器怎么用
-
-导师提供的单节点 8 卡 NVLink 环境非常有价值，但我不会把论文重点写成“我用了 8 张卡训练模型”。
-
-8 卡环境的作用是：
-
-```text
-支持更稳定的长上下文训练；
-支持 7B 模型作为主实验；
-支持 8K 甚至 16K context；
-支持多组 baseline 和消融实验；
-让实验结果更系统、更有说服力。
-```
-
-我建议的训练路线是：
-
-```text
-第一阶段：7B + 8K + LoRA/QLoRA，小规模 token budget 试跑
-第二阶段：7B + 8K，完整比较不同 packing 方法
-第三阶段：7B + 16K 或 13B + 8K，只选择关键方法做扩展
-第四阶段：做消融实验和案例分析
-```
-
-这里 LoRA/QLoRA 不是创新点，它只是节省显存和训练成本的工具。因为我需要跑很多组对比实验，如果每组都做全参数微调，成本会太高。
-
----
-
-## 8. 实验整体流程
-
-实验会分三层进行。
-
-### 第一层：先比较 packing 数据本身
-
-这一层不训练模型，只比较不同方法构造出来的数据有什么区别。
-
-我会比较：
+比较方法：
 
 ```text
 Random Packing
 Length-Aware Packing
-Same-Repo Packing
+Same-Repo / Same-Topic Packing
 BM25 Packing
 Semantic / DataSculpt-lite Packing
 Dependency-Aware Packing
+Hybrid: Semantic + Dependency Packing
 ```
-
-主要看：
-
-```text
-窗口是否被充分利用；
-是否大量截断文档；
-每个窗口平均有多少文档；
-窗口内部依赖关系强不强；
-依赖边覆盖率高不高；
-语义是否一致；
-是否有大量重复内容。
-```
-
-这一层的目的是证明：
-
-> 我的 packing 方法确实构造出了依赖关系更密集的训练样本。
-
-### 第二层：固定训练条件，只改变 packing 方法
-
-这一层是主实验。
-
-在同样的条件下训练模型：
-
-```text
-同一个 base model；
-同一个 context length；
-同一个训练 token budget；
-同一个 LoRA/QLoRA 配置；
-同一个 optimizer；
-同样的训练步数；
-只改变 packing 方法。
-```
-
-这样如果模型效果不同，就更有理由说明差异来自数据组织方式，而不是训练设置不同。
-
-### 第三层：评估模型是否更会用长上下文
-
-训练后会评估：
-
-```text
-RepoBench / 跨文件补全；
-跨文件检索；
-long-context validation loss；
-dependency-sensitive validation loss；
-passkey retrieval；
-needle-in-a-haystack；
-LongBench 子集。
-```
-
-其中主结论会优先依赖跨文件任务和 validation loss，passkey/needle 主要作为长上下文探针。
-
----
-
-## 9. 如何量化 packing 好不好
-
-我会从数据层面量化 packing 质量。
-
-### 9.1 Token Utilization
-
-衡量窗口是否被充分利用：
-
-```text
-token_utilization = 实际 token 数 / 最大窗口 token 数
-```
-
-它不能单独代表好坏，因为随机 packing 也可能填得很满。
-
-### 9.2 Truncation Rate
-
-衡量是否大量截断文档：
-
-```text
-token_truncation_rate = 被截断 token 数 / 原始候选 token 数
-```
-
-截断太多说明样本完整性差。
-
-### 9.3 Avg Docs per Window
-
-衡量每个窗口平均包含多少文档：
-
-```text
-avg_docs_per_window = 每个窗口文档数的平均值
-```
-
-文档太少，跨文档训练信号不足；文档太多，可能噪声较大。
-
-### 9.4 Dependency Score
-
-衡量窗口内部依赖关系强不强。
-
-我会构建依赖图：
-
-```text
-A -> B 表示 A 可能帮助理解 B
-```
-
-然后计算窗口中依赖边的平均强度。
-
-更重要的是顺序依赖：
-
-```text
-前面的文档是否能帮助后面的文档？
-```
-
-这和语言模型的因果训练方式更一致。
-
-### 9.5 Dependency Edge Coverage
-
-衡量全局依赖关系中，有多少被 packing 放进了同一个训练窗口。
-
-如果 dependency-aware packing 覆盖了更多依赖边，说明它更有效地把相关上下文组织到一起。
-
-### 9.6 Semantic Similarity
-
-衡量窗口内材料语义是否过于分散。
-
-它不是越高越好，但不能太低。我的方法不一定追求最高语义相似，而是追求更高依赖密度。
-
-### 9.7 Redundancy
-
-衡量是否重复堆叠相似内容。
-
-如果一个窗口里都是高度重复的文件，模型看到的信息量其实不高。
-
----
-
-## 10. 如何量化训练后的长上下文能力
-
-训练后主要从以下方面评估。
-
-### 10.1 跨文件补全
-
-例如给模型 `README + config + model.py + train.py` 的上下文，让它补全某一段代码。
-
-指标可以包括：
-
-```text
-Exact Match
-Edit Similarity
-CodeBLEU
-Identifier F1
-```
-
-### 10.2 跨文件检索
-
-给定一个目标位置，让模型或检索模块找出最相关的跨文件上下文。
 
 指标：
 
 ```text
-Recall@k
-MRR@k
-Hit@k
-nDCG@k
+token utilization
+truncation rate
+avg docs per window
+order-aware dependency score
+dependency edge coverage
+semantic similarity
+redundancy
+document integrity
 ```
 
-### 10.3 Long-Context Validation Loss
+这一层要证明：
 
-在 held-out 的长上下文验证集上计算 loss。
+> dependency-aware packing 不是简单填满窗口，而是提高了窗口内部的依赖密度。
 
-如果 dependency-aware 训练出的模型 loss 更低，说明它在类似长上下文分布上建模更好。
+### 7.2 主训练实验
 
-### 10.4 Context Gain
+在 8 卡 NVLink 服务器上训练。
 
-这是最贴合我方法的指标。
-
-对于一条依赖关系：
+主设置：
 
 ```text
-A -> B
+model: 7B
+context length: 8K
+training method: LoRA / QLoRA
+token budget: 50M / 100M / 200M
+hardware: single-node 8-GPU NVLink
 ```
 
-比较：
+控制变量：
 
 ```text
-loss(B alone)
-loss(A + B)
+base model 相同
+tokenizer 相同
+context length 相同
+training token budget 相同
+optimizer 相同
+learning rate 相同
+LoRA/QLoRA config 相同
+effective batch size 相同
+validation set 相同
+evaluation protocol 相同
 ```
 
-定义：
+唯一主要变量：
+
+```text
+packing method
+```
+
+### 7.3 消融实验
+
+消融用于证明提升来自 dependency modeling，而不是规则堆叠。
+
+建议消融：
+
+```text
+Dependency-Aware without import/source-source relation
+Dependency-Aware without source-test relation
+Dependency-Aware without README/docs relation
+Dependency-Aware without config-script relation
+Dependency-Aware without same-repo weak prior
+BM25 vs BM25 + structure reranking
+Semantic vs Semantic + dependency reranking
+Only-code vs multi-source context
+Explicit dependency vs implicit loss-reduction dependency
+```
+
+最关键对比：
+
+```text
+Same-Repo vs Dependency-Aware
+DataSculpt-lite vs Dependency-Aware
+DataSculpt-lite vs Hybrid Dependency + Semantic
+```
+
+### 7.4 泛化验证实验
+
+为了避免方法看起来只适用于代码仓库，需要有一个弱结构或隐式依赖场景。
+
+可以先做轻量版本：
+
+```text
+选择技术文档或论文段落数据；
+用 BM25/embedding 召回候选；
+计算 loss-reduction dependency；
+比较 semantic packing 和 loss-reduction dependency packing；
+报告 packing statistics 和 context gain。
+```
+
+如果资源允许，再做小规模训练。
+
+---
+
+## 8. 如何比较不同 Packing 策略优劣
+
+比较分为数据层面和模型层面。
+
+### 8.1 数据层面
+
+理想结果：
+
+```text
+Dependency-Aware:
+  dependency score 更高；
+  edge coverage 更高；
+  token utilization 接近 baseline；
+  truncation rate 可控；
+  redundancy 不高；
+  semantic similarity 不失控。
+```
+
+这说明方法构造出了更高依赖密度的训练样本，而且没有严重牺牲窗口利用率和完整性。
+
+### 8.2 模型层面
+
+训练后评测：
+
+```text
+long-context validation loss
+dependency-sensitive validation loss
+context gain
+RepoBench / cross-file retrieval
+cross-file completion
+passkey retrieval
+needle-in-a-haystack
+LongBench subset
+```
+
+其中最贴合本课题的是：
 
 ```text
 context_gain(A -> B) = loss(B alone) - loss(A + B)
 ```
 
-如果一个模型真的学会利用依赖上下文，那么加入 A 后预测 B 的 loss 应该下降更多。
-
-### 10.5 Passkey 和 Needle
-
-这类任务是在长文本中插入一条关键信息，然后问模型能否找回来。
-
-它们可以测试模型的长距离检索能力，但比较合成，所以只作为辅助评测。
+如果 dependency-aware 训练出来的模型在真实依赖边上 context gain 更高，就说明它更会利用上下文依赖。
 
 ---
 
-## 11. 最关键的对比和消融
+## 9. 实验代码设计
 
-为了证明我的方法不是简单把同仓库文件放一起，最关键对比是：
+当前项目会按模块化方式组织，便于在本地开发和服务器运行。
+
+### 9.1 数据模块
+
+目标：
 
 ```text
-Same-Repo Packing vs Dependency-Aware Packing
+把原始 repo / 文档集合转换成统一 JSONL；
+构建 dependency_edges.jsonl；
+按 repo 或文档集合做 train/val/test split。
 ```
 
-为了证明不是词面相关就够了，要比较：
+计划脚本：
 
 ```text
-BM25 Packing vs Dependency-Aware Packing
+scripts/data/build_repo_corpus.py
+scripts/data/extract_repo_metadata.py
+scripts/data/build_dependency_edges.py
+scripts/data/split_by_repo.py
 ```
 
-为了证明不是语义相似就够了，要比较：
+### 9.2 Packing 模块
+
+已有基础：
 
 ```text
-Semantic/DataSculpt-lite Packing vs Dependency-Aware Packing
+random
+length_aware
+same_repo
+bm25
+dependency_aware
 ```
 
-消融实验包括：
+后续补充：
 
 ```text
-去掉 import relation；
-去掉 source-test relation；
-去掉 README/docs relation；
-去掉 config-script relation；
-去掉 same-repo 弱信号；
-BM25 + structure reranking；
-Semantic + structure reranking。
+semantic
+datasculpt_lite
+bm25_structure_rerank
+semantic_dependency_rerank
+loss_reduction_dependency
 ```
 
-这些实验可以回答：
+统一入口：
+
+```bash
+python scripts/run_packing.py \
+  --input data/processed/train_docs.jsonl \
+  --output data/processed/train_8k_dependency.jsonl \
+  --method dependency_aware \
+  --max-tokens 8192
+```
+
+### 9.3 指标统计模块
+
+已有：
 
 ```text
-哪类依赖最有用？
-结构依赖是否只是 same-repo 的替代？
-结构依赖能否增强 BM25 或 semantic packing？
+scripts/summarize_packing.py
+```
+
+后续扩展：
+
+```text
+dependency edge coverage
+order-aware dependency score
+same-repo ratio
+same-directory ratio
+semantic similarity
+redundancy
+```
+
+输出：
+
+```text
+outputs/packing_summary.csv
+```
+
+### 9.4 训练模块
+
+目标：
+
+```text
+固定模型、token budget、context length；
+只替换 packed training data；
+在 8 卡服务器上跑 LoRA/QLoRA。
+```
+
+配置模板：
+
+```text
+configs/training/7b_8k_lora.yaml
+configs/training/7b_8k_qlora.yaml
+```
+
+服务器脚本规划：
+
+```text
+scripts/server/run_7b_8k_lora.sh
+scripts/server/run_7b_8k_qlora.sh
+scripts/server/run_packing_matrix.sh
+```
+
+### 9.5 评测模块
+
+评测配置：
+
+```text
+configs/evaluation/default.yaml
+```
+
+计划支持：
+
+```text
+RepoBench-R / C / P
+cross-file completion
+context gain
+passkey
+needle
+LongBench subset
 ```
 
 ---
 
-## 12. 预期论文产出
+## 10. 8 卡 NVLink 部署运行设计
 
-最终论文可以产出以下内容：
+服务器部署目标不是一次性训练最大模型，而是建立稳定可复现实验流程。
 
-1. 一种 dependency-aware packing 方法。
-2. 一套多源代码仓库上下文的数据构造流程。
-3. 一组 packing 质量指标。
-4. 8 卡 NVLink 环境下的长上下文适配对比实验。
-5. 消融实验和案例分析。
-
-论文中可以包含：
+### 10.1 推荐环境
 
 ```text
-不同 packing 方法的数据统计表；
-不同 packing 方法的主评测结果表；
-不同依赖类型的消融表；
-训练效率表；
-validation loss 曲线；
-context length 分组结果；
-dependency-aware packing 成功和失败案例。
+Python 3.10+
+PyTorch + CUDA
+transformers
+datasets
+accelerate
+peft
+bitsandbytes, 如果使用 QLoRA
+flash-attn, 如果服务器 CUDA 支持
+deepspeed 或 FSDP
+wandb / tensorboard
+```
+
+### 10.2 运行阶段
+
+第一阶段：环境与 packing smoke test。
+
+```bash
+PYTHONPATH=src python -m pytest -q
+
+python scripts/run_packing.py \
+  --config configs/packing/default.yaml
+```
+
+第二阶段：packing matrix。
+
+```text
+为 random / length-aware / same-repo / BM25 / DataSculpt-lite /
+Dependency-Aware 生成同样 token budget 的训练数据。
+```
+
+第三阶段：7B + 8K 小预算训练。
+
+```text
+先跑 random 与 dependency-aware；
+确认显存、吞吐、loss curve 正常。
+```
+
+第四阶段：完整 baseline。
+
+```text
+固定 7B + 8K + token budget；
+跑所有 packing 方法；
+统一评测。
+```
+
+第五阶段：扩展实验。
+
+```text
+7B + 16K；
+13B + 8K；
+消融；
+Hybrid dependency + semantic。
+```
+
+### 10.3 每次实验必须记录
+
+```text
+git commit
+packing method
+dataset version
+model path
+context length
+token budget
+LoRA/QLoRA config
+effective batch size
+number of GPUs
+precision
+tokens/sec
+peak memory
+training hours
+validation loss
+evaluation results
+```
+
+这样后续论文表格可以直接从实验日志整理。
+
+---
+
+## 11. 预期论文产出
+
+论文可以形成以下结果。
+
+### 11.1 方法贡献
+
+```text
+提出 Dependency-Aware Packing 框架；
+将 packing 目标从相似性/窗口利用率扩展到上下文依赖；
+区分显式结构依赖和隐式模型增益依赖。
+```
+
+### 11.2 指标贡献
+
+```text
+order-aware dependency score
+dependency edge coverage
+weighted edge coverage
+context gain
+dependency-sensitive validation loss
+```
+
+### 11.3 实验贡献
+
+```text
+代码仓库多源上下文主实验；
+弱结构/隐式依赖辅助实验；
+DataSculpt-lite、BM25、semantic、same-repo 等强 baseline；
+8 卡 NVLink 下系统训练和评测；
+消融与 case study。
 ```
 
 ---
 
-## 13. 项目的最终一句话
+## 12. 给导师汇报时的简短说法
 
-这个项目的重点不是：
+可以这样概括：
 
-> 我能把模型训到多长。
+> 我现在想做的是长上下文训练数据 packing 策略优化。现有方法多按长度、检索相关或语义相似来拼接文档，但这些目标不能保证窗口内部存在真正可学习的上下文依赖。我提出 Dependency-Aware Packing，把“一个文档是否能帮助理解或预测另一个文档”作为 packing 目标。  
+>
+> 在有显式结构的场景，例如代码仓库，我会用 README、docs、config、source、test、issue、commit 之间的结构关系构建依赖图；在没有显式结构的普通文本中，我会用 BM25/embedding 召回候选，再用 loss reduction 或 context gain 估计隐式依赖。  
+>
+> 实验上，我会先比较不同 packing 方法生成的数据质量，再在 8 卡 NVLink 服务器上固定模型、context length 和 token budget，只改变 packing 方法，比较训练后长上下文表现。最终通过 packing 指标、context gain、RepoBench、cross-file completion、needle/passkey 和消融实验来验证依赖感知 packing 是否比 Random、BM25、Semantic/DataSculpt-lite 更有效。
 
-而是：
+---
 
-> 在长上下文训练中，如何把有限的上下文窗口组织得更有学习价值。
+## 13. 当前项目状态
 
-更具体地说：
+当前仓库已经具备：
 
-> 通过 dependency-aware packing，把存在依赖关系的多源材料放在一起，让模型在训练中更好地学习跨文档、跨文件、跨段落的长上下文利用能力。
+```text
+基础 packing 框架；
+random / length-aware / same-repo / BM25 / dependency-aware baseline；
+packing summary 脚本；
+8 卡训练配置模板；
+评测配置模板；
+指标定义文档；
+服务器部署规划文档；
+导师汇报文档。
+```
+
+下一步应做：
+
+```text
+1. 构建多源代码仓库数据预处理脚本；
+2. 加入 dependency_edges.jsonl 构建流程；
+3. 实现 DataSculpt-lite / semantic baseline；
+4. 扩展 packing 指标统计；
+5. 在服务器上跑 7B + 8K smoke training；
+6. 开始完整 baseline 实验。
+```
