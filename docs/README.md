@@ -28,6 +28,10 @@ This folder is organized around the research workflow described in
 6. [Server deployment plan](03_server/server_deployment_plan.md)
    - How the project should be deployed and run on an 8-GPU NVLink server.
 
+7. [Pre-server optimization runbook](03_server/pre_server_optimization_runbook.md)
+   - Concrete commands for real-tokenizer packing, edge review, cap
+     sensitivity, dependency-sensitive validation data, and QLoRA smoke runs.
+
 ## Archive
 
 [archive/legacy_low_resource_experiment_plan.md](archive/legacy_low_resource_experiment_plan.md)

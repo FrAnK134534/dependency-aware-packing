@@ -151,6 +151,17 @@ python scripts/run_packing_matrix.py \
 If the server cannot access HuggingFace, download or cache the tokenizer first
 and add `--tokenizer-local-files-only`.
 
+Before moving to model training, follow the concrete pre-server checklist in
+[pre_server_optimization_runbook.md](pre_server_optimization_runbook.md):
+
+```text
+real-tokenizer packing
+manual edge review
+cap sensitivity
+dependency-sensitive validation set construction
+8-GPU QLoRA smoke run
+```
+
 ### Stage 2: 7B + 8K Smoke Training
 
 Goal:

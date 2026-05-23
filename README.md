@@ -176,6 +176,55 @@ pilot. Override it explicitly if needed:
 MAX_DOCS_PER_REPO=500 bash scripts/server/run_packing_only_experiment.sh
 ```
 
+Generate both train and validation packed splits before smoke training:
+
+```bash
+PACK_SPLITS="train validation" MAX_DOCS_PER_REPO=300 \
+bash scripts/server/run_packing_only_experiment.sh \
+  configs/datasets/python50_repos.tsv \
+  data/processed/python50_qwen \
+  8192 \
+  Qwen/Qwen2.5-Coder-7B \
+  random,bm25,datasculpt_lite,dependency_aware_v2_strong_first
+```
+
+Sample dependency edges for manual review:
+
+```bash
+python scripts/data/sample_dependency_edges.py \
+  --documents data/processed/python50_qwen/splits/train_docs.jsonl \
+  --edges data/processed/python50_qwen/splits/train_edges.jsonl \
+  --output data/processed/python50_qwen/review/train_edge_review.csv \
+  --sample-size 100
+```
+
+Build dependency-sensitive validation examples:
+
+```bash
+python scripts/evaluation/build_dependency_validation.py \
+  --documents data/processed/python50_qwen/splits/validation_docs.jsonl \
+  --edges data/processed/python50_qwen/splits/validation_edges.jsonl \
+  --output data/processed/python50_qwen/eval/dependency_validation.jsonl \
+  --tokenizer Qwen/Qwen2.5-Coder-7B
+```
+
+Score context gain after training:
+
+```bash
+python scripts/evaluation/score_dependency_validation.py \
+  --model Qwen/Qwen2.5-Coder-7B \
+  --adapter outputs/training/qwen7b_depaware_smoke/final_adapter \
+  --input data/processed/python50_qwen/eval/dependency_validation.jsonl \
+  --output outputs/evaluation/qwen7b_depaware_context_gain.jsonl \
+  --bf16
+```
+
+Run cap sensitivity before committing to a server-scale cap:
+
+```bash
+CAP_VALUES="100 300 500" bash scripts/server/run_cap_sensitivity.sh
+```
+
 ## Current Baselines
 
 - `random`: randomly shuffles documents and fills context windows.

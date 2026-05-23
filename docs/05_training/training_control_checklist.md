@@ -23,6 +23,8 @@ test_documents:
 train_edges:
 validation_edges:
 test_edges:
+edge_review_path:
+dependency_validation_path:
 ```
 
 Required pre-training checks:
@@ -32,6 +34,9 @@ Required pre-training checks:
 - `tokenizer` is the target model tokenizer, not `simple`.
 - The same train/validation/test split is used for every method.
 - The same total training-token budget is used for every method.
+- A manual edge-review CSV has been sampled and inspected.
+- A dependency-sensitive validation JSONL has been generated from held-out
+  repositories.
 
 Recommended training candidates:
 
@@ -175,6 +180,7 @@ Confirm:
 - The repo is clean or the current diff is saved.
 - The current commit hash is written into the run directory.
 - `summary.csv` has acceptable utilization and strong-edge coverage.
+- Cap sensitivity does not remove the dependency-aware advantage.
 - A tiny smoke run has completed successfully.
 - The first full run is `random` or another baseline, not only the proposed
   method.
