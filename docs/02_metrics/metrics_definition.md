@@ -126,12 +126,15 @@ weighted_edge_coverage
 Use the weighted version as the main metric when edges have different
 importance.
 
-For the current code-repository setting, report strong and weak coverage
-separately:
+Report strong and weak coverage separately:
 
 ```text
-strong edges = edges containing import/source-test/docs-code/README-code/config-script/example-code
-weak edges   = edges containing only same_directory and/or same_repo
+strong edges = edges containing explicit evidence:
+               import/source-test/docs-code/README-code/config-script/example-code
+               hyperlink/citation/API-doc-usage/definition-usage/equation-or-figure-reference
+
+weak edges   = edges containing only structural proximity:
+               same_directory/same_repo/same_document/same_collection/section_neighbor/same_domain
 ```
 
 The summary CSV therefore includes:
@@ -148,6 +151,22 @@ avg_weak_order_dependency
 This split is important because same-directory relations are useful but weak.
 The thesis claim should mainly rely on explicit strong edges and use weak edges
 as a controlled structural prior.
+
+For context-gain validation, prefer manually reviewed strong edges. If an edge
+review file is available, use only `yes` or medium/high-confidence `partial`
+edges by default:
+
+```bash
+python scripts/evaluation/build_dependency_validation.py \
+  --documents data/processed/documents.jsonl \
+  --edges data/processed/dependency_edges.jsonl \
+  --review-annotations data/processed/review/edge_review_annotated.csv \
+  --allowed-review-labels yes,partial \
+  --min-review-confidence 0.6 \
+  --output data/processed/dependency_validation.jsonl
+```
+
+Unreviewed edges should only be mixed back in through an explicit backfill flag.
 
 ### 1.6 Semantic Similarity
 

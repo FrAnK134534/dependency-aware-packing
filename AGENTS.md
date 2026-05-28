@@ -34,6 +34,11 @@ The method should remain general enough to extend to technical documents later,
 but the first paper-quality experimental loop should stay centered on code
 repository and software-engineering context.
 
+The repository also contains a first implementation of manifest-driven
+non-code collection for papers, web pages, technical documents, and plain text.
+Use it as a generalization path, while keeping the main thesis claim anchored
+in dependency-aware packing rather than broad web crawling.
+
 ## 2. What Is the Innovation?
 
 Do not frame the project as "training a larger model on 8 GPUs." The 8-GPU
@@ -82,13 +87,14 @@ experiments/notebooks/       Analysis notebooks
 experiments/logs/            Small run summaries
 outputs/                     Generated outputs, gitignored
 scripts/
-  data/                    Corpus, dependency edge, and repo split builders
+  data/                      Corpus, dependency edge, external corpus, and repo split builders
   run_packing.py             Generate packed JSONL files
   run_packing_matrix.py      Generate multiple packing baselines
   summarize_packing.py       Summarize packing outputs
   server/                    Future server launch scripts
 src/dapacking/
   bm25.py                    Lightweight BM25 implementation
+  collectors/                Manifest-driven PDF/HTML/Markdown/Text collectors
   dependency.py              Structural dependency rules
   documents.py               Data classes
   io.py                      JSONL readers/writers
@@ -104,7 +110,7 @@ Current methods:
 
 - `random`: shuffle documents and fill windows.
 - `length_aware`: sort by length and fill windows.
-- `same_repo`: group documents by repository.
+- `same_repo`: group documents by repository or external collection.
 - `bm25`: use lexical retrieval from an anchor document.
 - `semantic`: use a lightweight TF-IDF cosine index as an early semantic
   baseline.
@@ -162,8 +168,25 @@ Packed JSONL sample format:
 }
 ```
 
+External/non-code documents should preserve:
+
+```json
+{
+  "collection": "manuals",
+  "document_id": "paper_a",
+  "section_id": "0001-method",
+  "section_title": "Method",
+  "section_index": 1,
+  "source_kind": "local_pdf",
+  "source_type": "paper_section",
+  "url": "https://example.org/paper.html",
+  "license": "CC-BY"
+}
+```
+
 When adding new data sources, preserve metadata. Do not throw away repo, path,
-language, source type, issue ID, commit ID, or license information.
+language, source type, collection, document ID, URL, issue ID, commit ID, or
+license information.
 
 ## 6. Core Metrics to Implement and Preserve
 
@@ -213,9 +236,11 @@ Semantic and redundancy metrics:
   similarity exceeds a high threshold.
 - `strong_edge_coverage` / `weighted_strong_edge_coverage`: coverage of edges
   containing at least one explicit relation such as import, source-test,
-  docs-code, README-code, config-script, or example-code.
+  docs-code, README-code, config-script, example-code, hyperlink, citation,
+  API-doc-usage, definition-usage, or equation/figure reference.
 - `weak_edge_coverage` / `weighted_weak_edge_coverage`: coverage of edges made
-  only from `same_directory` and/or `same_repo`.
+  only from `same_directory`, `same_repo`, `same_document`,
+  `same_collection`, `section_neighbor`, and/or `same_domain`.
 
 Tokenizer policy:
 
@@ -224,6 +249,17 @@ Tokenizer policy:
   `--tokenizer Qwen/Qwen2.5-Coder-7B`.
 - Use `--tokenizer-local-files-only` when the server has no outbound network
   access and the tokenizer is already cached.
+
+Pre-training freeze additions:
+
+- Write a dataset card with `scripts/data/write_dataset_card.py`.
+- Sample balanced edge-review CSVs with
+  `scripts/data/sample_dependency_edges.py --per-relation`.
+- Summarize annotated edge reviews with `scripts/data/summarize_edge_review.py`.
+- Build context-gain controls with
+  `scripts/evaluation/build_context_gain_controls.py`.
+- Check matched-utilization fairness with
+  `scripts/analysis/check_packing_fairness.py`.
 
 ### 6.2 Post-Training Metrics
 
@@ -388,11 +424,58 @@ python scripts/summarize_packing.py \
   --output outputs/packing_summary.csv
 ```
 
+Build external/non-code documents from a manifest:
+
+```bash
+python scripts/data/build_external_corpus.py \
+  --manifest configs/datasets/external_manifest.example.tsv \
+  --output data/processed/external_documents.jsonl
+```
+
+Merge repository and external documents:
+
+```bash
+python scripts/data/build_mixed_corpus.py \
+  --input data/processed/documents.jsonl \
+  --input data/processed/external_documents.jsonl \
+  --output data/processed/mixed_documents.jsonl
+```
+
+Build context-gain validation from reviewed edges:
+
+```bash
+python scripts/evaluation/build_dependency_validation.py \
+  --documents data/processed/documents.jsonl \
+  --edges data/processed/dependency_edges.jsonl \
+  --review-annotations data/processed/review/edge_review_annotated.csv \
+  --output data/processed/dependency_validation.jsonl
+```
+
+Build anti-bias context-gain controls:
+
+```bash
+python scripts/evaluation/build_context_gain_controls.py \
+  --documents data/processed/splits/validation_docs.jsonl \
+  --edges data/processed/splits/validation_edges.jsonl \
+  --output data/processed/context_gain_controls.jsonl
+```
+
+Write a dataset card:
+
+```bash
+python scripts/data/write_dataset_card.py \
+  --documents data/processed/documents.jsonl \
+  --edges data/processed/dependency_edges.jsonl \
+  --split-dir data/processed/splits \
+  --name repo-main-v1 \
+  --output data/processed/DATASET_CARD.md
+```
+
 ## 10. Data and Evaluation Safety
 
 Avoid data leakage:
 
-- split by repository, not by individual file;
+- split by repository or external collection group, not by individual file;
 - do not train on held-out evaluation repositories;
 - decontaminate against RepoBench, LongBench, SWE-bench, and any custom test
   sets used in the paper;

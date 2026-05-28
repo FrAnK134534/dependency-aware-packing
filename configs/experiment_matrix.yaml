@@ -6,6 +6,7 @@ datasets:
   train: data/processed/train_docs.jsonl
   validation: data/processed/validation_docs.jsonl
   test: data/processed/test_docs.jsonl
+  frozen_dataset_config: configs/datasets/frozen_datasets.yaml
 
 packing_methods:
   - random
@@ -55,6 +56,14 @@ primary_metrics:
     - weighted_edge_coverage
     - semantic_similarity
     - redundant_pair_rate
+    - weighted_strong_edge_coverage
+    - weighted_weak_edge_coverage
+  anti_bias_controls:
+    - edge_review_strict_precision
+    - edge_review_supportive_rate
+    - same_group_non_edge_context_gain
+    - random_cross_group_context_gain
+    - matched_utilization
   training:
     - validation_loss
     - long_context_validation_loss

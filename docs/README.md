@@ -22,15 +22,22 @@ This folder is organized around the research workflow described in
    - High-level experimental design: baselines, ablations, 8K/16K training, and
      paper outputs.
 
-5. [Metrics definition](02_metrics/metrics_definition.md)
+5. [Method formalization](01_design/method_formalization.md)
+   - Formal definitions for documents, dependency edges, strong/weak relations,
+     the packing objective, anti-bias controls, and ablations.
+
+6. [Metrics definition](02_metrics/metrics_definition.md)
    - Quantifies packing quality and post-training long-context performance.
 
-6. [Server deployment plan](03_server/server_deployment_plan.md)
+7. [Server deployment plan](03_server/server_deployment_plan.md)
    - How the project should be deployed and run on an 8-GPU NVLink server.
 
-7. [Pre-server optimization runbook](03_server/pre_server_optimization_runbook.md)
+8. [Pre-server optimization runbook](03_server/pre_server_optimization_runbook.md)
    - Concrete commands for real-tokenizer packing, edge review, cap
      sensitivity, dependency-sensitive validation data, and QLoRA smoke runs.
+
+9. [Pre-training freeze protocol](03_server/pretraining_freeze_protocol.md)
+   - Go/no-go procedure before spending 8-GPU time on formal training.
 
 ## Archive
 

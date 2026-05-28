@@ -1,0 +1,3 @@
+source_id	source_kind	location	collection	license	title	source_type	term	api_name
+guide	local_markdown	external/guide.md	example_docs	MIT	Guide	technical_doc	Context gain	
+api	local_html	external/api.html	example_docs	MIT	API	api_doc		Trainer.fit

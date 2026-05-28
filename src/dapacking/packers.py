@@ -146,7 +146,7 @@ class SameRepoPacker(SequentialFillMixin, BasePacker):
     def pack(self, documents: list[Document]) -> list[PackedSample]:
         buckets: dict[str, list[Document]] = defaultdict(list)
         for document in documents:
-            buckets[document.repo or "__unknown__"].append(document)
+            buckets[document_group(document)].append(document)
 
         ordered: list[Document] = []
         for repo in sorted(buckets):
@@ -413,7 +413,7 @@ class DependencyAwarePacker(BasePacker):
             del remaining[anchor.docid]
             current = [anchor]
             current_tokens = token_counts[anchor.docid]
-            current_repo = anchor.repo
+            current_group = document_group(anchor)
 
             phase_scores = [strong_dependency_scores, dependency_scores] if self.strong_first else [dependency_scores]
             for scores in phase_scores:
@@ -421,7 +421,7 @@ class DependencyAwarePacker(BasePacker):
                     current,
                     current_tokens,
                     remaining,
-                    current_repo,
+                    current_group,
                     token_counts,
                     scores,
                 )
@@ -500,7 +500,7 @@ class DependencyAwarePacker(BasePacker):
         current: list[Document],
         current_tokens: int,
         remaining: dict[str, Document],
-        current_repo: str,
+        current_group: str,
         token_counts: dict[str, int],
         dependency_scores: dict[str, dict[str, float]],
     ) -> tuple[list[Document], int]:
@@ -508,7 +508,7 @@ class DependencyAwarePacker(BasePacker):
             candidates = [
                 document
                 for document in remaining.values()
-                if not current_repo or document.repo == current_repo
+                if not current_group or document_group(document) == current_group
             ]
             if not candidates:
                 break
@@ -570,7 +570,7 @@ class DependencyAwarePacker(BasePacker):
         token_counts: dict[str, int],
         dependency_scores: dict[str, dict[str, float]],
     ) -> tuple[list[Document], int]:
-        anchor_repo = current[0].repo
+        anchor_group = document_group(current[0])
 
         while (
             remaining
@@ -579,7 +579,7 @@ class DependencyAwarePacker(BasePacker):
             candidates = [
                 document
                 for document in remaining.values()
-                if not anchor_repo or document.repo == anchor_repo
+                if not anchor_group or document_group(document) == anchor_group
             ]
             if not candidates:
                 break
@@ -612,7 +612,7 @@ class DependencyAwarePacker(BasePacker):
         if remaining_budget <= 0:
             return None, -1.0
 
-        anchor_repo = current[0].repo
+        anchor_group = document_group(current[0])
         best_doc: Document | None = None
         best_score = -1.0
 
@@ -628,7 +628,7 @@ class DependencyAwarePacker(BasePacker):
             same_parent_bonus = (
                 1.0 if any(_same_parent(existing, candidate) for existing in current) else 0.0
             )
-            same_repo_bonus = 1.0 if anchor_repo and anchor_repo == candidate.repo else 0.0
+            same_repo_bonus = 1.0 if anchor_group and anchor_group == document_group(candidate) else 0.0
             fit_score = candidate_tokens / max(remaining_budget, 1)
             redundancy_penalty = max(token_jaccard(existing, candidate) for existing in current)
             score = (
@@ -668,13 +668,23 @@ class DependencyAwareStrongEdgesOnlyPacker(DependencyAwarePacker):
 
 
 def _same_parent(left: Document, right: Document) -> bool:
-    return bool(left.repo and left.repo == right.repo and left.parent == right.parent)
+    left_group = document_group(left)
+    return bool(left_group and left_group == document_group(right) and left.parent == right.parent)
 
 
 def same_repo_candidates(anchor: Document, candidates: Iterable[Document]) -> list[Document]:
-    if not anchor.repo:
+    anchor_group = document_group(anchor)
+    if not anchor_group:
         return list(candidates)
-    return [candidate for candidate in candidates if candidate.repo == anchor.repo]
+    return [candidate for candidate in candidates if document_group(candidate) == anchor_group]
+
+
+def document_group(document: Document) -> str:
+    for key in ("repo", "collection", "document_set", "dataset"):
+        value = str(document.metadata.get(key, "")).strip()
+        if value:
+            return value
+    return ""
 
 
 def average_dependency_score(

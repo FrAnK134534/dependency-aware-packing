@@ -1,0 +1,28 @@
+datasets:
+  repo_main_v1:
+    role: primary
+    description: "20-50 real repositories with source, tests, README, docs, configs, examples."
+    source_manifest: configs/datasets/python50_repos.tsv
+    processed_dir: data/processed/repo_main_v1
+    split_policy: repo_or_collection_group
+    main_claim: true
+    required_artifacts:
+      - documents.jsonl
+      - dependency_edges.jsonl
+      - splits/train_docs.jsonl
+      - splits/validation_docs.jsonl
+      - splits/test_docs.jsonl
+      - DATASET_CARD.md
+
+  mixed_generalization_v1:
+    role: generalization
+    description: "Repository data plus a small manifest-driven set of papers, web pages, technical docs, and text."
+    source_manifest: configs/datasets/external_manifest.example.tsv
+    processed_dir: data/processed/mixed_generalization_v1
+    split_policy: repo_or_collection_group
+    main_claim: false
+    required_artifacts:
+      - external_documents.jsonl
+      - documents.jsonl
+      - dependency_edges.jsonl
+      - DATASET_CARD.md

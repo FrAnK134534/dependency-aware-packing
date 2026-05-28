@@ -14,33 +14,20 @@ if str(SRC) not in sys.path:
 from dapacking.edges import read_dependency_edges
 from dapacking.io import read_documents, write_jsonl
 from dapacking.tokenization import configure_tokenizer
-from dapacking.validation import (
-    DependencyValidationConfig,
-    build_dependency_validation_records,
-    read_review_annotations,
-)
+from dapacking.validation import ControlValidationConfig, build_control_validation_records
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build dependency-sensitive validation records for context-gain evaluation."
+        description="Build same-group non-edge and random cross-group context-gain controls."
     )
     parser.add_argument("--documents", required=True, type=Path)
     parser.add_argument("--edges", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--max-examples-per-relation", type=int, default=200)
+    parser.add_argument("--max-examples-per-control", type=int, default=200)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--include-weak", action="store_true")
     parser.add_argument("--max-source-tokens", type=int, default=2048)
     parser.add_argument("--max-target-tokens", type=int, default=2048)
-    parser.add_argument(
-        "--review-annotations",
-        type=Path,
-        help="Optional edge review CSV/JSONL. Defaults to keeping only reviewed yes/partial edges.",
-    )
-    parser.add_argument("--allowed-review-labels", default="yes,partial")
-    parser.add_argument("--min-review-confidence", type=float, default=0.6)
-    parser.add_argument("--allow-unreviewed-backfill", action="store_true")
     parser.add_argument("--tokenizer", default="simple")
     parser.add_argument("--tokenizer-local-files-only", action="store_true")
     parser.add_argument("--tokenizer-trust-remote-code", action="store_true")
@@ -56,35 +43,23 @@ def main() -> None:
     )
     documents = read_documents(args.documents)
     edges = read_dependency_edges(args.edges)
-    review_annotations = (
-        read_review_annotations(args.review_annotations) if args.review_annotations else None
-    )
-    records = build_dependency_validation_records(
+    records = build_control_validation_records(
         documents,
         edges,
-        DependencyValidationConfig(
-            max_examples_per_relation=args.max_examples_per_relation,
+        ControlValidationConfig(
+            max_examples_per_control=args.max_examples_per_control,
             seed=args.seed,
-            include_weak=args.include_weak,
             max_source_tokens=args.max_source_tokens,
             max_target_tokens=args.max_target_tokens,
-            review_annotations=review_annotations,
-            allowed_review_labels=tuple(
-                label.strip().lower()
-                for label in args.allowed_review_labels.split(",")
-                if label.strip()
-            ),
-            min_review_confidence=args.min_review_confidence,
-            allow_unreviewed_backfill=args.allow_unreviewed_backfill,
         ),
     )
     write_jsonl(args.output, records)
     relation_counts = Counter(str(record["primary_relation"]) for record in records)
     print(f"documents={len(documents)}")
     print(f"edges={len(edges)}")
-    print(f"validation_records={len(records)}")
+    print(f"control_records={len(records)}")
     for relation, count in sorted(relation_counts.items()):
-        print(f"relation.{relation}={count}")
+        print(f"control.{relation}={count}")
     print(f"output={args.output}")
 
 

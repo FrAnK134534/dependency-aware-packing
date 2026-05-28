@@ -34,9 +34,16 @@ Required pre-training checks:
 - `tokenizer` is the target model tokenizer, not `simple`.
 - The same train/validation/test split is used for every method.
 - The same total training-token budget is used for every method.
+- `DATASET_CARD.md` exists for the frozen dataset version.
 - A manual edge-review CSV has been sampled and inspected.
+- Edge-review summary has been generated with per-relation precision and
+  supportive rate.
 - A dependency-sensitive validation JSONL has been generated from held-out
   repositories.
+- Same-group non-edge and random-cross-group context-gain controls have been
+  generated.
+- A packing fairness check has confirmed matched utilization against strong
+  baselines.
 
 Recommended training candidates:
 
@@ -158,6 +165,8 @@ Evaluation controls:
 - Use the same validation/evaluation prompts for every trained model.
 - Keep decoding settings fixed.
 - Report both final performance and training efficiency.
+- Report context gain for reviewed dependency edges, same-group non-edges, and
+  random cross-group controls.
 
 ## 7. Run Naming
 
@@ -181,6 +190,9 @@ Confirm:
 - The current commit hash is written into the run directory.
 - `summary.csv` has acceptable utilization and strong-edge coverage.
 - Cap sensitivity does not remove the dependency-aware advantage.
+- Edge review is good enough to justify using dependency edges as validation
+  evidence.
+- Context-gain controls exist and are scored with the same script.
 - A tiny smoke run has completed successfully.
 - The first full run is `random` or another baseline, not only the proposed
   method.

@@ -1,0 +1,42 @@
+experiment_name: dependency_aware_packing_pretraining_freeze
+
+default_model:
+  base_model: Qwen/Qwen2.5-Coder-7B
+  tokenizer: Qwen/Qwen2.5-Coder-7B
+  context_length: 8192
+  training_method: qlora
+  token_budget: 100M
+  seed: 42
+
+datasets:
+  primary: repo_main_v1
+  generalization: mixed_generalization_v1
+
+packing_methods:
+  required:
+    - random
+    - length_aware
+    - same_repo
+    - bm25
+    - semantic
+    - datasculpt_lite
+    - dependency_aware_v2_strong_first
+  ablations:
+    - dependency_aware_v2_token_fit
+    - dependency_aware_strong_edges_only
+    - dependency_aware_no_same_directory
+    - dependency_aware_no_same_repo
+
+pretraining_gates:
+  min_review_supportive_rate: 0.60
+  max_utilization_gap_vs_baseline: 0.05
+  require_context_gain_controls: true
+  require_target_tokenizer_packing: true
+  require_dataset_card: true
+
+context_gain_expectation:
+  positive: reviewed_dependency_edge
+  controls:
+    - same_group_non_edge
+    - random_cross_group
+  expected_order: reviewed_dependency_edge > same_group_non_edge > random_cross_group

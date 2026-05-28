@@ -25,6 +25,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--edges", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--sample-size", type=int, default=50)
+    parser.add_argument(
+        "--per-relation",
+        type=int,
+        default=0,
+        help="Sample up to this many edges per primary relation. Overrides --sample-size.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--strong-only", action="store_true")
     parser.add_argument("--excerpt-chars", type=int, default=360)
@@ -44,6 +50,7 @@ def main() -> None:
             seed=args.seed,
             include_weak=not args.strong_only,
             excerpt_chars=args.excerpt_chars,
+            per_relation_sample_size=args.per_relation,
         ),
     )
     write_records(args.output, records, args.format)
@@ -64,6 +71,7 @@ def write_records(path: Path, records: list[dict[str, object]], output_format: s
     fieldnames = list(records[0]) if records else [
         "review_id",
         "relation",
+        "primary_relation",
         "labels",
         "is_strong",
         "weight",
@@ -78,6 +86,8 @@ def write_records(path: Path, records: list[dict[str, object]], output_format: s
         "source_excerpt",
         "target_excerpt",
         "manual_reasonable",
+        "manual_confidence",
+        "manual_error_type",
         "manual_note",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:

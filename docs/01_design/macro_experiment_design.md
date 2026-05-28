@@ -108,7 +108,22 @@ API usage
 2. 评测可以使用 RepoBench、跨文件补全等任务。
 3. 相比纯代码文件，更接近真实开发场景中的长上下文使用方式。
 
-后续如果时间允许，可以增加第二类数据，例如技术文档或论文材料，但不建议第一阶段就扩展到通用网页或 Wikipedia。
+当前代码已经加入第二类数据的工程入口：通过 manifest 显式列出本地 PDF、HTML、Markdown、Text 或 URL HTML，
+生成与代码仓库相同格式的 `Document` JSONL。这样可以把技术文档、论文、网页和普通文本纳入同一套
+dependency graph / packing / validation 流程。
+
+但是论文主实验仍建议以代码仓库多源上下文为主，因为代码仓库的显式依赖更容易人工审查和定量验证。
+非代码数据更适合作为泛化实验或案例分析，用来说明 dependency-aware 的思想不局限于代码文件。
+
+非代码场景中的依赖例子包括：
+
+```text
+API document -> usage example
+definition section -> later example section
+paper citation -> cited paper/section
+web page -> explicitly linked page
+figure/table/equation object -> text section that refers to it
+```
 
 ---
 

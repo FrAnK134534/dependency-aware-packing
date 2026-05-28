@@ -24,7 +24,7 @@
 
 ## 2. 为什么选择代码仓库作为研究场景
 
-这个方向可以在很多文本数据上做，比如论文、网页、百科、技术文档等。但不适合一开始做得太泛，所以这里选择 **代码仓库** 作为主要场景。
+这个方向可以在很多文本数据上做，比如论文、网页、百科、技术文档等。但不适合一开始把论文主线做得太泛，所以这里选择 **代码仓库** 作为主要场景。
 
 原因是代码仓库天然存在清晰的结构关系：
 
@@ -54,6 +54,20 @@ config/train.yaml 保存训练参数
 这也是本课题选择代码仓库的关键原因：
 
 > 代码仓库中的结构关系可以作为“上下文依赖”的低成本近似。
+
+同时，当前项目已经把 dependency 构建扩展到非代码材料。非代码材料不是通过大规模爬虫随便抓取，而是通过 manifest 显式列出来源，例如本地论文 PDF、技术文档 Markdown、HTML 网页和普通文本。它们会被切成 section-level documents，并保留 `collection`、`document_id`、`section_id`、`url`、`license` 等 metadata。
+
+非代码依赖同样要求有显式证据，例如：
+
+```text
+网页 A 明确链接到网页 B
+论文段落引用某篇论文或某个 DOI
+定义段落中的术语在后续例子中被使用
+API 文档中的函数在 tutorial/example 中被调用
+正文明确引用 Figure/Table/Equation
+```
+
+这些扩展的作用是证明 dependency-aware packing 的思想可以泛化，但硕士论文的主证据仍然优先放在代码仓库场景。
 
 ---
 
@@ -137,10 +151,12 @@ src/model.py -> tests/test_model.py
 |---|---|
 | import relation | 一个文件 import / require 另一个文件 |
 | source-test relation | 测试文件测试某个源码文件 |
-| README-code relation | README 或文档说明某些代码文件 |
-| config-script relation | 配置文件被训练脚本或运行脚本使用 |
-| same directory/module | 文件位于同一目录或模块 |
-| same repo | 文件属于同一个代码仓库 |
+| README-code relation | README 或文档显式提到代码路径、模块或符号 |
+| config-script relation | workflow/config 显式调用脚本，或脚本显式读取配置 |
+| same directory/module | 文件位于同一目录或模块，作为弱关系 |
+| same repo | 文件属于同一个代码仓库，作为弱关系 |
+| hyperlink/citation relation | 非代码文档之间存在显式链接或引用 |
+| definition/API usage relation | 定义、API 文档和后续用法之间存在显式术语或调用 |
 
 这些关系可以组合成一个 dependency score：
 

@@ -16,6 +16,14 @@ class Document:
         return str(self.metadata.get("repo", ""))
 
     @property
+    def collection(self) -> str:
+        return str(self.metadata.get("collection", self.repo))
+
+    @property
+    def document_id(self) -> str:
+        return str(self.metadata.get("document_id", self.metadata.get("source_id", self.docid)))
+
+    @property
     def path(self) -> str:
         path = self.metadata.get("path")
         if path:

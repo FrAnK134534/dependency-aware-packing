@@ -24,6 +24,11 @@ dev = [
 tokenizer = [
   "transformers>=4.40"
 ]
+collectors = [
+  "beautifulsoup4>=4.12",
+  "pypdf>=4.0",
+  "requests>=2.31"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

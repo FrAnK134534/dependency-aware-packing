@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from dapacking.dependency import has_strong_dependency
+from dapacking.dependency import WEAK_DEPENDENCY_LABELS, has_strong_dependency
 from dapacking.documents import Document
 from dapacking.edges import DependencyEdge
 
@@ -14,6 +14,7 @@ class EdgeReviewConfig:
     seed: int = 42
     include_weak: bool = True
     excerpt_chars: int = 360
+    per_relation_sample_size: int = 0
 
 
 def sample_edge_review_records(
@@ -32,7 +33,9 @@ def sample_edge_review_records(
     ]
 
     rng = random.Random(config.seed)
-    if config.sample_size > 0 and len(candidates) > config.sample_size:
+    if config.per_relation_sample_size > 0:
+        candidates = _balanced_by_relation(candidates, config.per_relation_sample_size, rng)
+    elif config.sample_size > 0 and len(candidates) > config.sample_size:
         candidates = rng.sample(candidates, config.sample_size)
     else:
         candidates = list(candidates)
@@ -43,10 +46,12 @@ def sample_edge_review_records(
         source = document_by_id[edge.source_docid]
         target = document_by_id[edge.target_docid]
         labels = _edge_labels(edge)
+        primary_relation = _primary_relation(labels)
         records.append(
             {
                 "review_id": f"edge_review_{index:05d}",
                 "relation": edge.relation,
+                "primary_relation": primary_relation,
                 "labels": ",".join(labels),
                 "is_strong": has_strong_dependency(labels),
                 "weight": edge.weight,
@@ -61,10 +66,31 @@ def sample_edge_review_records(
                 "source_excerpt": _excerpt(source.content, config.excerpt_chars),
                 "target_excerpt": _excerpt(target.content, config.excerpt_chars),
                 "manual_reasonable": "",
+                "manual_confidence": "",
+                "manual_error_type": "",
                 "manual_note": "",
             }
         )
     return records
+
+
+def _balanced_by_relation(
+    edges: list[DependencyEdge],
+    per_relation_sample_size: int,
+    rng: random.Random,
+) -> list[DependencyEdge]:
+    grouped: dict[str, list[DependencyEdge]] = {}
+    for edge in edges:
+        relation = _primary_relation(_edge_labels(edge))
+        grouped.setdefault(relation, []).append(edge)
+
+    sampled: list[DependencyEdge] = []
+    for relation in sorted(grouped):
+        relation_edges = list(grouped[relation])
+        rng.shuffle(relation_edges)
+        sampled.extend(relation_edges[:per_relation_sample_size])
+    rng.shuffle(sampled)
+    return sampled
 
 
 def _edge_labels(edge: DependencyEdge) -> list[str]:
@@ -72,6 +98,13 @@ def _edge_labels(edge: DependencyEdge) -> list[str]:
     if isinstance(labels, list):
         return [str(label) for label in labels]
     return [label for label in edge.relation.split("+") if label]
+
+
+def _primary_relation(labels: list[str]) -> str:
+    for label in labels:
+        if label not in WEAK_DEPENDENCY_LABELS:
+            return label
+    return labels[0] if labels else "unknown"
 
 
 def _excerpt(content: str, max_chars: int) -> str:

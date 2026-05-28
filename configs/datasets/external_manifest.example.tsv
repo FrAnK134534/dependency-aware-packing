@@ -1,0 +1,5 @@
+source_id	source_kind	location	collection	license	title	source_type
+guide	local_markdown	docs/guide.md	manuals	MIT	Project Guide	technical_doc
+paper	local_pdf	papers/example.pdf	papers	CC-BY	Example Paper	paper_section
+api	local_html	web/api.html	webdocs	MIT	API Reference	api_doc
+page	url_html	https://example.org/tutorial	webdocs	Unknown	Tutorial	web_page
