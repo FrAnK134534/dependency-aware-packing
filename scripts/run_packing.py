@@ -80,6 +80,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Allow custom tokenizer code when loading from HuggingFace.",
     )
+    parser.add_argument(
+        "--edges",
+        type=Path,
+        help="Optional precomputed dependency_edges.jsonl for dependency-aware methods.",
+    )
     return parser.parse_args()
 
 
@@ -119,6 +124,7 @@ def main() -> None:
     tokenizer_trust_remote_code = bool(
         args.tokenizer_trust_remote_code or config.get("tokenizer_trust_remote_code", False)
     )
+    dependency_edges_path = args.edges or config.get("dependency_edges_path")
 
     if not input_path:
         raise SystemExit("--input or input_path in config is required")
@@ -139,6 +145,7 @@ def main() -> None:
             tokenizer_name=tokenizer_name,
             tokenizer_local_files_only=tokenizer_local_files_only,
             tokenizer_trust_remote_code=tokenizer_trust_remote_code,
+            dependency_edges_path=str(dependency_edges_path) if dependency_edges_path else None,
         )
     )
     samples = packer.pack(documents)

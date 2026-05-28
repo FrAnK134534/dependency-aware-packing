@@ -9,7 +9,7 @@ from typing import Iterable
 from dapacking.bm25 import BM25Index
 from dapacking.dependency import DEFAULT_WEIGHTS, WEAK_DEPENDENCY_LABELS, dependency_score
 from dapacking.documents import Document, PackedSample
-from dapacking.edges import DependencyEdge, build_dependency_edges
+from dapacking.edges import DependencyEdge, build_dependency_edges, read_dependency_edges
 from dapacking.semantic import TfidfIndex, token_jaccard
 from dapacking.tokenization import active_tokenizer_name, configure_tokenizer, count_tokens, truncate_to_tokens
 
@@ -27,6 +27,7 @@ class PackingConfig:
     tokenizer_name: str = "simple"
     tokenizer_local_files_only: bool = False
     tokenizer_trust_remote_code: bool = False
+    dependency_edges_path: str | None = None
 
 
 class BasePacker(ABC):
@@ -394,11 +395,7 @@ class DependencyAwarePacker(BasePacker):
         documents, truncated_by_docid = self._prepare_documents(documents)
         remaining = {document.docid: document for document in documents}
         token_counts = {document.docid: document_window_tokens(document) for document in documents}
-        dependency_edges = build_dependency_edges(
-            documents,
-            weights=self.config.dependency_weights or DEFAULT_WEIGHTS,
-            min_score=self.config.min_dependency_score,
-        )
+        dependency_edges = self._load_or_build_dependency_edges(documents)
         dependency_scores = self._dependency_scores_from_edges(dependency_edges)
         strong_dependency_scores = (
             self._dependency_scores_from_edges(dependency_edges, excluded_labels=WEAK_DEPENDENCY_LABELS)
@@ -450,12 +447,23 @@ class DependencyAwarePacker(BasePacker):
         documents: list[Document],
         excluded_labels: frozenset[str] | None = None,
     ) -> dict[str, dict[str, float]]:
-        edges = build_dependency_edges(
-            documents,
-            weights=self.config.dependency_weights or DEFAULT_WEIGHTS,
-            min_score=self.config.min_dependency_score,
-        )
+        edges = self._load_or_build_dependency_edges(documents)
         return self._dependency_scores_from_edges(edges, excluded_labels)
+
+    def _load_or_build_dependency_edges(self, documents: list[Document]) -> list[DependencyEdge]:
+        if not self.config.dependency_edges_path:
+            return build_dependency_edges(
+                documents,
+                weights=self.config.dependency_weights or DEFAULT_WEIGHTS,
+                min_score=self.config.min_dependency_score,
+            )
+
+        docids = {document.docid for document in documents}
+        return [
+            edge
+            for edge in read_dependency_edges(self.config.dependency_edges_path)
+            if edge.source_docid in docids and edge.target_docid in docids
+        ]
 
     def _dependency_scores_from_edges(
         self,

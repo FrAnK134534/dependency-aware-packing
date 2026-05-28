@@ -76,6 +76,7 @@ def main() -> None:
                 tokenizer_name=args.tokenizer,
                 tokenizer_local_files_only=args.tokenizer_local_files_only,
                 tokenizer_trust_remote_code=args.tokenizer_trust_remote_code,
+                dependency_edges_path=str(args.edges) if args.edges else None,
             )
         )
         samples = packer.pack(documents)
