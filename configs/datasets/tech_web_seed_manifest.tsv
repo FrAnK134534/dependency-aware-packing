@@ -1,0 +1,8 @@
+source_id	source_kind	location	collection	license	title	source_type	document_id	term	api_name
+python_datamodel	url_html	https://docs.python.org/3/reference/datamodel.html	python_docs	PSF-2.0	Python Data Model	technical_doc	python_datamodel		
+python_import	url_html	https://docs.python.org/3/reference/import.html	python_docs	PSF-2.0	Python Import System	technical_doc	python_import	import	
+python_typing	url_html	https://docs.python.org/3/library/typing.html	python_docs	PSF-2.0	Python typing	api_doc	python_typing		typing.Protocol
+pytorch_autograd	url_html	https://docs.pytorch.org/tutorials/beginner/blitz/autograd_tutorial.html	pytorch_docs	see_source	PyTorch Autograd Tutorial	tutorial	pytorch_autograd	autograd	torch.autograd
+pytorch_tensor	url_html	https://docs.pytorch.org/docs/stable/tensors.html	pytorch_docs	see_source	PyTorch Tensor API	api_doc	pytorch_tensor		torch.Tensor
+requests_quickstart	url_html	https://requests.readthedocs.io/en/latest/user/quickstart/	requests_docs	see_source	Requests Quickstart	tutorial	requests_quickstart		requests.get
+requests_api	url_html	https://requests.readthedocs.io/en/latest/api/	requests_docs	see_source	Requests API	api_doc	requests_api		requests.Session

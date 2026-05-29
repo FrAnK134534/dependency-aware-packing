@@ -116,6 +116,10 @@ Current methods:
   baseline.
 - `datasculpt_lite`: combine TF-IDF coherence, token-fit efficiency,
   repository integrity, and redundancy penalty.
+- `datasculpt_original`: external baseline adapter for the original DataSculpt
+  pipeline. It is run through `scripts/baselines/run_datasculpt_original.sh`,
+  not through the in-process `packers.py` matrix, because it requires
+  embedding, Ray, clustering, and usually GPU resources.
 - `dependency_aware`: greedily add documents with structural dependency edges.
 - `dependency_aware_v2_token_fit`: first add dependency-linked documents, then
   fill remaining budget using same-repo token-fit candidates.
@@ -505,5 +509,7 @@ Avoid overclaiming:
 1. Add structure-aware reranking on top of BM25 and semantic retrieval.
 2. Build multi-source repository data preprocessing:
    source, tests, README, docs, configs, examples, issues, commits.
-3. Add server-oriented training configs for 7B + 8K LoRA/QLoRA.
-4. Add evaluation scripts for RepoBench, passkey, needle, and context gain.
+3. Run original DataSculpt baseline on the server after the embedding model is
+   cached.
+4. Add server-oriented training configs for 7B + 8K LoRA/QLoRA.
+5. Add evaluation scripts for RepoBench, passkey, needle, and context gain.

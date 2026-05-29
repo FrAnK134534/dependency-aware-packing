@@ -26,6 +26,19 @@ python scripts/data/build_mixed_corpus.py \
   --output data/processed/mixed_generalization_v1/documents.jsonl
 ```
 
+For a standalone technical-doc/web generalization set:
+
+```bash
+FETCH_URLS=1 \
+  bash scripts/data/build_external_dataset_pipeline.sh \
+  configs/datasets/tech_web_seed_manifest.tsv \
+  data/processed/tech_web_generalization_v1 \
+  tech-web-generalization-v1
+```
+
+The external pipeline defaults to `GROUP_KEY=document_id`, so sections from the
+same web page or document do not leak across splits.
+
 Write a dataset card:
 
 ```bash
@@ -59,6 +72,18 @@ python scripts/data/summarize_edge_review.py \
   --output-csv data/processed/repo_main_v1/review/train_edge_review_summary.csv \
   --output-md data/processed/repo_main_v1/review/train_edge_review_report.md
 ```
+
+Optionally create assistant-assisted suggestions first:
+
+```bash
+python scripts/data/assistant_annotate_edge_review.py \
+  --input data/processed/repo_main_v1/review/train_edges_balanced.csv \
+  --documents data/processed/repo_main_v1/splits/train_docs.jsonl \
+  --output data/processed/repo_main_v1/review/train_edges_balanced_assistant.csv
+```
+
+These are suggestions, not independent human labels. Use them to speed up the
+manual audit, then confirm labels before treating precision as paper-quality.
 
 ## 3. Build Context-Gain Validation
 
@@ -94,6 +119,21 @@ bash scripts/server/run_packing_only_experiment.sh \
   8192 \
   Qwen/Qwen2.5-Coder-7B
 ```
+
+To run the original DataSculpt pipeline as an external baseline:
+
+```bash
+bash scripts/baselines/run_datasculpt_original.sh \
+  data/processed/repo_main_v1/splits/train_docs.jsonl \
+  data/processed/repo_main_v1/splits/train_edges.jsonl \
+  data/processed/repo_main_v1/packed/train_8192_datasculpt_original \
+  /Users/frank/Documents/课题组/datasculpt/DataSculpt \
+  8192
+```
+
+This baseline requires the DataSculpt environment, embedding model, Ray, and GPU
+resources. It is stronger than `datasculpt_lite`, but also more expensive and
+should be reported as an external pipeline baseline.
 
 Check fairness gates:
 

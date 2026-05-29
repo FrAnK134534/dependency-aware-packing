@@ -15,6 +15,7 @@ packing_methods:
   - bm25
   - semantic
   - datasculpt_lite
+  - datasculpt_original
   - dependency_aware
   - dependency_aware_v2_token_fit
   - dependency_aware_v2_strong_first
