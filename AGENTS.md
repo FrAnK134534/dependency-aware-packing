@@ -78,7 +78,7 @@ data/
   raw/                       Raw datasets, gitignored
   processed/                 Generated datasets, gitignored
 docs/                        Research plans and reports
-  00_overview/               Advisor report, design rationale, thesis scope
+  00_overview/               Project report, thesis scope, evaluation dossier
   01_design/                 Macro experiment design
   02_metrics/                Metric definitions
   03_server/                 8-GPU NVLink deployment plan
@@ -125,6 +125,13 @@ Current methods:
   fill remaining budget using same-repo token-fit candidates.
 - `dependency_aware_v2_strong_first`: first add explicit structural edges, then
   weak directory/repository edges, then token-fit candidates.
+- `dependency_aware_high_precision_only`: main thesis setting that scores only
+  high-precision relations from `configs/relations/main_high_precision.yaml`
+  and uses same-repo/collection token-fit only as filler.
+- `dependency_aware_high_precision_random_order`: same selected documents as
+  high-precision packing, but randomly ordered inside each window.
+- `dependency_aware_high_precision_reverse_order`: same selected documents as
+  high-precision packing, but reversed inside each window.
 - `dependency_aware_no_same_directory`: ablation removing directory co-location.
 - `dependency_aware_no_same_repo`: ablation removing the same-repository score
   bonus.

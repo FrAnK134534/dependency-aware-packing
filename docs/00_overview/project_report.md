@@ -1,4 +1,4 @@
-# 项目设想与导师汇报：Dependency-Aware Packing for Long-Context Adaptation
+# 项目设想：Dependency-Aware Packing for Long-Context Adaptation
 
 ## 1. 一句话概括
 

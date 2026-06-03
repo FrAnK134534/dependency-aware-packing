@@ -85,6 +85,29 @@ python scripts/data/assistant_annotate_edge_review.py \
 These are suggestions, not independent human labels. Use them to speed up the
 manual audit, then confirm labels before treating precision as paper-quality.
 
+Build relation reliability from the confirmed manual labels. This command
+intentionally ignores assistant labels:
+
+```bash
+python scripts/data/build_relation_reliability.py \
+  --input data/processed/repo_main_v1/review/train_edges_balanced_annotated.csv \
+  --output data/processed/repo_main_v1/review/relation_reliability.yaml
+```
+
+Freeze the high-precision edge files used by the main dependency-aware setting:
+
+```bash
+python scripts/data/filter_dependency_edges.py \
+  --input data/processed/repo_main_v1/splits/train_edges.jsonl \
+  --relation-config configs/relations/main_high_precision.yaml \
+  --output data/processed/repo_main_v1/splits/train_edges_high_precision.jsonl
+
+python scripts/data/filter_dependency_edges.py \
+  --input data/processed/repo_main_v1/splits/validation_edges.jsonl \
+  --relation-config configs/relations/main_high_precision.yaml \
+  --output data/processed/repo_main_v1/splits/validation_edges_high_precision.jsonl
+```
+
 ## 3. Build Context-Gain Validation
 
 Build positive reviewed dependency records:
@@ -120,6 +143,21 @@ bash scripts/server/run_packing_only_experiment.sh \
   Qwen/Qwen2.5-Coder-7B
 ```
 
+Before the target-tokenizer run, use a fast local pass to verify the
+high-precision method and order ablations:
+
+```bash
+python scripts/run_packing_matrix.py \
+  --input data/processed/repo_main_v1/splits/validation_docs.jsonl \
+  --edges data/processed/repo_main_v1/splits/validation_edges_high_precision.jsonl \
+  --relation-config configs/relations/main_high_precision.yaml \
+  --output-dir data/processed/repo_main_v1/packed/validation_8192_high_precision \
+  --methods dependency_aware_high_precision_only,dependency_aware_high_precision_random_order,dependency_aware_high_precision_reverse_order,dependency_aware_v2_strong_first,datasculpt_lite,bm25 \
+  --max-tokens 8192 \
+  --tokenizer simple \
+  --summary data/processed/repo_main_v1/packed/validation_8192_high_precision/summary.csv
+```
+
 To run the original DataSculpt pipeline as an external baseline:
 
 ```bash
@@ -140,7 +178,7 @@ Check fairness gates:
 ```bash
 python scripts/analysis/check_packing_fairness.py \
   --summary data/processed/repo_main_v1/packed/train_8192/summary.csv \
-  --method dependency_aware_v2_strong_first \
+  --method dependency_aware_high_precision_only \
   --output data/processed/repo_main_v1/packed/train_8192/fairness_check.csv
 ```
 
@@ -155,8 +193,9 @@ edge review report exists
 dependency validation exists
 context-gain controls exist
 target-tokenizer packing summary exists
-dependency-aware utilization is within 0.05 of strong baselines
-dependency-aware weighted strong-edge coverage is higher than BM25/DataSculpt-lite
+high-precision dependency-aware utilization is within 0.05 of strong baselines
+high-precision dependency-aware weighted strong-edge coverage is higher than BM25/DataSculpt-lite
+same-docs random/reverse order ablations are generated for order-sensitivity checks
 ```
 
 Proceed to formal training only after the 8-GPU smoke run succeeds.

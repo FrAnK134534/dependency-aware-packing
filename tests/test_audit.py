@@ -23,3 +23,17 @@ def test_summarize_review_records_reports_precision_by_relation() -> None:
 
     report = render_review_markdown(summaries, records)
     assert "generic_name" in report
+
+
+def test_summarize_review_records_ignores_assistant_label_as_manual() -> None:
+    records = [
+        {
+            "primary_relation": "import_relation",
+            "assistant_review_label": "yes",
+        }
+    ]
+
+    summaries = summarize_review_records(records)
+
+    assert summaries[0].unknown == 1
+    assert summaries[0].yes == 0

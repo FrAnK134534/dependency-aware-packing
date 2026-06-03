@@ -1,4 +1,5 @@
 from dapacking.documents import Document
+from dapacking.edges import DependencyEdge, write_dependency_edges
 from dapacking.packers import PackingConfig, build_packer
 
 
@@ -136,3 +137,116 @@ def test_dependency_aware_strong_edges_only_ignores_same_directory_only() -> Non
 
     grouped_docids = [set(sample.docids) for sample in samples]
     assert not any({"repo:src/a.py", "repo:src/b.py"}.issubset(group) for group in grouped_docids)
+
+
+def test_high_precision_packer_scores_only_allowed_relations() -> None:
+    packer = build_packer(PackingConfig(method="dependency_aware_high_precision_only", max_tokens=256))
+    edges = [
+        DependencyEdge(
+            "repo:src/utils.py",
+            "repo:src/train.py",
+            "import_relation+same_repo",
+            1.1,
+            {"labels": ["import_relation", "same_repo"]},
+        ),
+        DependencyEdge(
+            "repo:README.md",
+            "repo:src/model.py",
+            "readme_code_relation+same_repo",
+            0.75,
+            {"labels": ["readme_code_relation", "same_repo"]},
+        ),
+    ]
+
+    scores = packer._dependency_scores_from_edges(edges)  # type: ignore[attr-defined]
+
+    assert scores["repo:src/utils.py"]["repo:src/train.py"] == 1.0
+    assert "repo:README.md" not in scores
+
+
+def test_high_precision_packer_applies_relation_reliability() -> None:
+    packer = build_packer(
+        PackingConfig(
+            method="dependency_aware_high_precision_only",
+            max_tokens=256,
+            relation_reliability={"test_source_relation": 0.5},
+        )
+    )
+    edge = DependencyEdge(
+        "repo:src/model.py",
+        "repo:tests/test_model.py",
+        "test_source_relation+same_repo",
+        1.0,
+        {"labels": ["test_source_relation", "same_repo"]},
+    )
+
+    scores = packer._dependency_scores_from_edges([edge])  # type: ignore[attr-defined]
+
+    assert scores["repo:src/model.py"]["repo:tests/test_model.py"] == 0.45
+
+
+def test_high_precision_order_ablations_keep_same_doc_sets(tmp_path) -> None:
+    docs = [
+        Document(
+            "repo:a.py",
+            "def alpha(): return 1",
+            {"repo": "repo", "path": "a.py", "source_type": "source"},
+        ),
+        Document(
+            "repo:b.py",
+            "def beta(): return alpha()",
+            {"repo": "repo", "path": "b.py", "source_type": "source"},
+        ),
+        Document(
+            "repo:c.py",
+            "def gamma(): return beta()",
+            {"repo": "repo", "path": "c.py", "source_type": "source"},
+        ),
+    ]
+    edge_path = tmp_path / "edges.jsonl"
+    write_dependency_edges(
+        edge_path,
+        [
+            DependencyEdge(
+                "repo:a.py",
+                "repo:b.py",
+                "import_relation+same_repo",
+                1.1,
+                {"labels": ["import_relation", "same_repo"]},
+            ),
+            DependencyEdge(
+                "repo:b.py",
+                "repo:c.py",
+                "import_relation+same_repo",
+                1.1,
+                {"labels": ["import_relation", "same_repo"]},
+            ),
+        ],
+    )
+
+    base = build_packer(
+        PackingConfig(
+            method="dependency_aware_high_precision_only",
+            max_tokens=512,
+            dependency_edges_path=str(edge_path),
+        )
+    ).pack(docs)
+    random_order = build_packer(
+        PackingConfig(
+            method="dependency_aware_high_precision_random_order",
+            max_tokens=512,
+            dependency_edges_path=str(edge_path),
+        )
+    ).pack(docs)
+    reverse_order = build_packer(
+        PackingConfig(
+            method="dependency_aware_high_precision_reverse_order",
+            max_tokens=512,
+            dependency_edges_path=str(edge_path),
+        )
+    ).pack(docs)
+
+    assert [set(sample.docids) for sample in random_order] == [set(sample.docids) for sample in base]
+    assert [set(sample.docids) for sample in reverse_order] == [set(sample.docids) for sample in base]
+    assert random_order[0].docids != base[0].docids
+    assert reverse_order[0].docids == list(reversed(base[0].docids))

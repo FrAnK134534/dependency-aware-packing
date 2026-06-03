@@ -21,6 +21,7 @@ Current starter scripts:
 build_dataset_pipeline.sh
 run_cap_sensitivity.sh
 run_packing_only_experiment.sh
+run_high_precision_freeze.sh
 run_packing_matrix.sh
 run_7b_8k_qlora.sh
 ```
@@ -48,6 +49,19 @@ bash scripts/server/run_packing_only_experiment.sh \
   random,bm25,datasculpt_lite,dependency_aware_v2_strong_first
 ```
 
+For the current main thesis setting, regenerate high-precision dependency edges
+and target-tokenizer packing with:
+
+```bash
+PACK_SPLITS="train validation" bash scripts/server/run_high_precision_freeze.sh \
+  data/processed/repo_main_v1 \
+  8192 \
+  Qwen/Qwen2.5-Coder-7B
+```
+
+Use `LOCAL_FILES_ONLY=1` if the model/tokenizer is already cached and the
+server has no outbound network access.
+
 Run cap sensitivity:
 
 ```bash
@@ -69,6 +83,9 @@ OUTPUT_DIR=outputs/training/qwen7b_depaware_smoke \
 MAX_STEPS=100 \
 bash scripts/server/run_7b_8k_qlora.sh
 ```
+
+For the high-precision main method, use files under
+`data/processed/repo_main_v1/packed/*_8192_high_precision/`.
 
 Build and score dependency-sensitive validation data after training:
 

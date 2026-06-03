@@ -10,6 +10,7 @@ from dapacking.bm25 import BM25Index
 from dapacking.dependency import DEFAULT_WEIGHTS, WEAK_DEPENDENCY_LABELS, dependency_score
 from dapacking.documents import Document, PackedSample
 from dapacking.edges import DependencyEdge, build_dependency_edges, read_dependency_edges
+from dapacking.relation_config import DEFAULT_HIGH_PRECISION_RELATIONS
 from dapacking.semantic import TfidfIndex, token_jaccard
 from dapacking.tokenization import active_tokenizer_name, configure_tokenizer, count_tokens, truncate_to_tokens
 
@@ -28,6 +29,8 @@ class PackingConfig:
     tokenizer_local_files_only: bool = False
     tokenizer_trust_remote_code: bool = False
     dependency_edges_path: str | None = None
+    allowed_dependency_labels: tuple[str, ...] | None = None
+    relation_reliability: dict[str, float] | None = None
 
 
 class BasePacker(ABC):
@@ -387,6 +390,7 @@ class DataSculptLitePacker(BasePacker):
 
 class DependencyAwarePacker(BasePacker):
     excluded_dependency_labels: frozenset[str] = frozenset()
+    allowed_dependency_labels: frozenset[str] | None = None
     token_fit_fill: bool = False
     token_fit_target_utilization: float = 0.9
     strong_first: bool = False
@@ -486,11 +490,24 @@ class DependencyAwarePacker(BasePacker):
         excluded_labels: frozenset[str] | None = None,
     ) -> float:
         weights = self.config.dependency_weights or DEFAULT_WEIGHTS
+        reliability = self.config.relation_reliability or {}
         excluded_labels = self.excluded_dependency_labels | (excluded_labels or frozenset())
+        allowed_labels = self._allowed_dependency_labels()
         filtered_labels = [
-            label for label in labels if label not in excluded_labels
+            label
+            for label in labels
+            if label not in excluded_labels
+            and (allowed_labels is None or label in allowed_labels)
         ]
-        return sum(weights.get(label, 0.0) for label in filtered_labels)
+        return sum(
+            weights.get(label, 0.0) * float(reliability.get(label, 1.0))
+            for label in filtered_labels
+        )
+
+    def _allowed_dependency_labels(self) -> frozenset[str] | None:
+        if self.config.allowed_dependency_labels is not None:
+            return frozenset(self.config.allowed_dependency_labels)
+        return self.allowed_dependency_labels
 
     def _select_anchor(
         self,
@@ -675,6 +692,55 @@ class DependencyAwareStrongEdgesOnlyPacker(DependencyAwarePacker):
     excluded_dependency_labels = WEAK_DEPENDENCY_LABELS
 
 
+class DependencyAwareHighPrecisionPacker(DependencyAwarePacker):
+    allowed_dependency_labels = frozenset(DEFAULT_HIGH_PRECISION_RELATIONS)
+    token_fit_fill = True
+    strong_first = True
+
+
+class DependencyAwareHighPrecisionOrderAblationPacker(DependencyAwareHighPrecisionPacker):
+    order_mode: str = "dependency"
+
+    def pack(self, documents: list[Document]) -> list[PackedSample]:
+        base_samples = DependencyAwareHighPrecisionPacker.pack(self, documents)
+        prepared, truncated_by_docid = self._prepare_documents(documents)
+        doc_by_id = {document.docid: document for document in prepared}
+        samples: list[PackedSample] = []
+
+        for index, sample in enumerate(base_samples):
+            ordered_docids = self._reorder_docids(sample.docids, index)
+            ordered_documents = [doc_by_id[docid] for docid in ordered_docids if docid in doc_by_id]
+            samples.append(
+                self._make_sample(
+                    index,
+                    ordered_documents,
+                    self._sample_truncated_tokens(ordered_documents, truncated_by_docid),
+                )
+            )
+
+        return samples
+
+    def _reorder_docids(self, docids: list[str], sample_index: int) -> list[str]:
+        ordered = list(docids)
+        if self.order_mode == "reverse":
+            return list(reversed(ordered))
+        if self.order_mode == "random":
+            rng = random.Random(self.config.seed + sample_index)
+            rng.shuffle(ordered)
+            if len(ordered) > 1 and ordered == docids:
+                ordered = ordered[1:] + ordered[:1]
+            return ordered
+        return ordered
+
+
+class DependencyAwareHighPrecisionRandomOrderPacker(DependencyAwareHighPrecisionOrderAblationPacker):
+    order_mode = "random"
+
+
+class DependencyAwareHighPrecisionReverseOrderPacker(DependencyAwareHighPrecisionOrderAblationPacker):
+    order_mode = "reverse"
+
+
 def _same_parent(left: Document, right: Document) -> bool:
     left_group = document_group(left)
     return bool(left_group and left_group == document_group(right) and left.parent == right.parent)
@@ -762,6 +828,9 @@ def build_packer(config: PackingConfig) -> BasePacker:
         "dependency_aware_no_same_directory": DependencyAwareNoSameDirectoryPacker,
         "dependency_aware_no_same_repo": DependencyAwareNoSameRepoPacker,
         "dependency_aware_strong_edges_only": DependencyAwareStrongEdgesOnlyPacker,
+        "dependency_aware_high_precision_only": DependencyAwareHighPrecisionPacker,
+        "dependency_aware_high_precision_random_order": DependencyAwareHighPrecisionRandomOrderPacker,
+        "dependency_aware_high_precision_reverse_order": DependencyAwareHighPrecisionReverseOrderPacker,
     }
     try:
         return packers[config.method](config)

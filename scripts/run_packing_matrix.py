@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 
 from dapacking.io import read_documents, write_samples
 from dapacking.packers import PackingConfig, build_packer
+from dapacking.relation_config import load_relation_config
 from dapacking.stats import summarize_packed_file
 
 
@@ -26,7 +27,10 @@ def parse_args() -> argparse.Namespace:
             "dependency_aware,dependency_aware_v2_token_fit,"
             "dependency_aware_v2_strong_first,"
             "dependency_aware_no_same_directory,dependency_aware_no_same_repo,"
-            "dependency_aware_strong_edges_only"
+            "dependency_aware_strong_edges_only,"
+            "dependency_aware_high_precision_only,"
+            "dependency_aware_high_precision_random_order,"
+            "dependency_aware_high_precision_reverse_order"
         ),
     )
     parser.add_argument("--max-tokens", type=int, default=8192)
@@ -51,6 +55,11 @@ def parse_args() -> argparse.Namespace:
         help="Allow custom tokenizer code when loading from HuggingFace.",
     )
     parser.add_argument("--edges", type=Path, help="Optional edge file for summary coverage metrics.")
+    parser.add_argument(
+        "--relation-config",
+        type=Path,
+        help="Optional relation YAML used for allowed labels and reliability weighting.",
+    )
     parser.add_argument("--summary", type=Path, help="Optional summary CSV path.")
     return parser.parse_args()
 
@@ -60,6 +69,7 @@ def main() -> None:
     documents = read_documents(args.input)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     methods = [method.strip() for method in args.methods.split(",") if method.strip()]
+    relation_config = load_relation_config(args.relation_config) if args.relation_config else None
 
     summaries = []
     for method in methods:
@@ -77,6 +87,8 @@ def main() -> None:
                 tokenizer_local_files_only=args.tokenizer_local_files_only,
                 tokenizer_trust_remote_code=args.tokenizer_trust_remote_code,
                 dependency_edges_path=str(args.edges) if args.edges else None,
+                allowed_dependency_labels=relation_config.allowed_relations if relation_config else None,
+                relation_reliability=relation_config.relation_reliability if relation_config else None,
             )
         )
         samples = packer.pack(documents)

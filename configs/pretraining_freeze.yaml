@@ -14,18 +14,24 @@ datasets:
 
 packing_methods:
   required:
-    - random
-    - length_aware
     - same_repo
     - bm25
     - semantic
     - datasculpt_lite
+    - dependency_aware_high_precision_only
     - dependency_aware_v2_strong_first
   ablations:
+    - random
+    - length_aware
     - dependency_aware_v2_token_fit
+    - dependency_aware_high_precision_random_order
+    - dependency_aware_high_precision_reverse_order
     - dependency_aware_strong_edges_only
     - dependency_aware_no_same_directory
     - dependency_aware_no_same_repo
+
+relation_config:
+  main_high_precision: configs/relations/main_high_precision.yaml
 
 pretraining_gates:
   min_review_supportive_rate: 0.60

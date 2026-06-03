@@ -48,15 +48,18 @@ Required pre-training checks:
 Recommended training candidates:
 
 ```text
-random
+same_repo
 bm25
 datasculpt_lite
-dependency_aware_v2_strong_first
+dependency_aware_high_precision_only
 ```
 
 Optional ablation if compute allows:
 
 ```text
+dependency_aware_high_precision_random_order
+dependency_aware_high_precision_reverse_order
+dependency_aware_v2_strong_first
 dependency_aware_v2_token_fit
 dependency_aware_strong_edges_only
 ```

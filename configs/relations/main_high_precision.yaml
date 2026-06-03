@@ -1,0 +1,28 @@
+name: main_high_precision
+description: >
+  Main thesis setting for high-precision dependency-aware packing. Only
+  relations with explicit, inspectable dependency evidence are allowed into the
+  primary dependency score. Noisy README/docs/example relations are retained by
+  the codebase for appendix/full-graph analysis but excluded here.
+
+allowed_relations:
+  - import_relation
+  - test_source_relation
+  - hyperlink_relation
+
+optional_after_audit:
+  - config_script_relation
+
+noisy_relations:
+  - readme_code_relation
+  - docs_code_relation
+  - example_code_relation
+
+relation_reliability:
+  import_relation: 1.0
+  test_source_relation: 0.95
+  hyperlink_relation: 0.95
+  config_script_relation: 0.75
+  readme_code_relation: 0.20
+  docs_code_relation: 0.25
+  example_code_relation: 0.15

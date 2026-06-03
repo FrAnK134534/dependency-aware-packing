@@ -5,45 +5,53 @@ This folder is organized around the research workflow described in
 
 ## Reading Order
 
-1. [Project report for advisor](00_overview/advisor_project_report.md)
+For repository structure and module responsibilities, read
+[../PROJECT_STRUCTURE.md](../PROJECT_STRUCTURE.md).
+
+1. [Project report](00_overview/project_report.md)
    - Chinese, plain-language explanation for advisor meetings.
    - Use this when explaining what the project is doing and why packing is the
      research target.
 
-2. [Design rationale](00_overview/design_rationale.md)
-   - Explains packing, dependency-aware packing, LoRA/QLoRA, and context
-     windows in accessible language.
-
-3. [Thesis scope](00_overview/thesis_scope.md)
+2. [Thesis scope](00_overview/thesis_scope.md)
    - Concise thesis positioning after upgrading the target environment to an
      8-GPU NVLink node.
 
-4. [Macro experiment design](01_design/macro_experiment_design.md)
+3. [Macro experiment design](01_design/macro_experiment_design.md)
    - High-level experimental design: baselines, ablations, 8K/16K training, and
      paper outputs.
 
-5. [Method formalization](01_design/method_formalization.md)
+4. [Method formalization](01_design/method_formalization.md)
    - Formal definitions for documents, dependency edges, strong/weak relations,
      the packing objective, anti-bias controls, and ablations.
 
-6. [Metrics definition](02_metrics/metrics_definition.md)
+5. [Metrics definition](02_metrics/metrics_definition.md)
    - Quantifies packing quality and post-training long-context performance.
 
-7. [Server deployment plan](03_server/server_deployment_plan.md)
+6. [Server deployment plan](03_server/server_deployment_plan.md)
    - How the project should be deployed and run on an 8-GPU NVLink server.
 
-8. [Pre-server optimization runbook](03_server/pre_server_optimization_runbook.md)
+7. [Pre-server optimization runbook](03_server/pre_server_optimization_runbook.md)
    - Concrete commands for real-tokenizer packing, edge review, cap
      sensitivity, dependency-sensitive validation data, and QLoRA smoke runs.
 
-9. [Pre-training freeze protocol](03_server/pretraining_freeze_protocol.md)
+8. [Pre-training freeze protocol](03_server/pretraining_freeze_protocol.md)
    - Go/no-go procedure before spending 8-GPU time on formal training.
+
+9. [Server training handoff](03_server/server_training_handoff.md)
+    - Practical handoff document for an advisor or server runner: current
+      status, target-tokenizer packing, QLoRA smoke run, and post-training
+      evaluation commands.
 
 ## Archive
 
 [archive/legacy_low_resource_experiment_plan.md](archive/legacy_low_resource_experiment_plan.md)
 keeps the older low-resource thesis plan for historical context. It should not
 be treated as the current main plan.
+
+[archive/legacy_design_rationale.md](archive/legacy_design_rationale.md)
+keeps the older plain-language design rationale. It has been superseded by
+`00_overview/project_report.md` and `01_design/method_formalization.md`.
 
 ## Current Main Line
 

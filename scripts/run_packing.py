@@ -14,6 +14,7 @@ if str(SRC) not in sys.path:
 
 from dapacking.io import read_documents, write_samples
 from dapacking.packers import PackingConfig, build_packer
+from dapacking.relation_config import load_relation_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,6 +37,9 @@ def parse_args() -> argparse.Namespace:
             "dependency_aware_no_same_directory",
             "dependency_aware_no_same_repo",
             "dependency_aware_strong_edges_only",
+            "dependency_aware_high_precision_only",
+            "dependency_aware_high_precision_random_order",
+            "dependency_aware_high_precision_reverse_order",
         ],
         help="Packing method.",
     )
@@ -85,6 +89,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Optional precomputed dependency_edges.jsonl for dependency-aware methods.",
     )
+    parser.add_argument(
+        "--relation-config",
+        type=Path,
+        help="Optional relation YAML used for allowed labels and reliability weighting.",
+    )
     return parser.parse_args()
 
 
@@ -125,6 +134,8 @@ def main() -> None:
         args.tokenizer_trust_remote_code or config.get("tokenizer_trust_remote_code", False)
     )
     dependency_edges_path = args.edges or config.get("dependency_edges_path")
+    relation_config_path = args.relation_config or config.get("relation_config")
+    relation_config = load_relation_config(relation_config_path) if relation_config_path else None
 
     if not input_path:
         raise SystemExit("--input or input_path in config is required")
@@ -146,6 +157,8 @@ def main() -> None:
             tokenizer_local_files_only=tokenizer_local_files_only,
             tokenizer_trust_remote_code=tokenizer_trust_remote_code,
             dependency_edges_path=str(dependency_edges_path) if dependency_edges_path else None,
+            allowed_dependency_labels=relation_config.allowed_relations if relation_config else None,
+            relation_reliability=relation_config.relation_reliability if relation_config else None,
         )
     )
     samples = packer.pack(documents)

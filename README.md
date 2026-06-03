@@ -32,10 +32,15 @@ The current version focuses on:
 
 ## Project Layout
 
+For a more detailed responsibility map, see [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md).
+
 ```text
 AGENTS.md                    Agent and experiment-runner project guide
+PROJECT_STRUCTURE.md         Directory responsibilities and ownership boundaries
 configs/                     Experiment and packing configs
+  datasets/                  Repo lists and external manifests
   packing/                   Packing configs
+  relations/                 Dependency relation allowlists and reliability
   training/                  7B/8K LoRA and QLoRA templates
   evaluation/                Evaluation suite templates
 data/
@@ -43,20 +48,25 @@ data/
   processed/                 Generated jsonl files, ignored by git
   examples/                  Tiny example data for smoke tests
 docs/
-  00_overview/               Advisor report, design rationale, thesis scope
+  00_overview/               Project report, thesis scope, evaluation dossier
   01_design/                 Macro experiment design
   02_metrics/                Metric definitions
   03_server/                 8-GPU NVLink deployment plan
+  05_training/               Training controls and checklists
   archive/                   Older plans kept for reference
 experiments/                 Run manifests, logs, and notebooks
 outputs/                     Generated outputs, ignored by git
 scripts/                     CLI entry points
-  server/                    Future server launch scripts
+  data/                      Corpus, edge, split, and review builders
+  evaluation/                Context-gain validation builders/scorers
+  server/                    Server launch scripts
+  training/                  QLoRA training entry point
 src/dapacking/               Python package
 tests/                       Basic tests
 ```
 
-Start reading from [docs/README.md](docs/README.md).
+Start reading from [docs/README.md](docs/README.md) or
+[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md).
 
 ## Data Format
 
@@ -188,6 +198,17 @@ bash scripts/server/run_packing_only_experiment.sh \
   random,bm25,datasculpt_lite,dependency_aware_v2_strong_first
 ```
 
+For the current high-precision main setting, regenerate filtered edges and
+target-tokenizer packing with:
+
+```bash
+PACK_SPLITS="train validation" \
+bash scripts/server/run_high_precision_freeze.sh \
+  data/processed/repo_main_v1 \
+  8192 \
+  Qwen/Qwen2.5-Coder-7B
+```
+
 Sample dependency edges for manual review:
 
 ```bash
@@ -241,6 +262,16 @@ CAP_VALUES="100 300 500" bash scripts/server/run_cap_sensitivity.sh
   then fills remaining context budget with same-repo, low-redundancy documents.
 - `dependency_aware_v2_strong_first`: first packs explicit structural edges,
   then weak same-directory edges, then token-fit fillers.
+- `dependency_aware_high_precision_only`: main thesis setting that uses only
+  high-precision, auditable relation labels from
+  `configs/relations/main_high_precision.yaml`, then fills unused budget with
+  same-repo/collection token-fit candidates.
+- `dependency_aware_high_precision_random_order`: uses the same selected
+  document sets as high-precision packing, but shuffles order inside each
+  window.
+- `dependency_aware_high_precision_reverse_order`: uses the same selected
+  document sets as high-precision packing, but reverses order inside each
+  window.
 - `dependency_aware_no_same_directory`: ablation that removes directory
   co-location as a dependency signal.
 - `dependency_aware_no_same_repo`: ablation that removes repository membership
